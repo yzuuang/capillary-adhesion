@@ -5,6 +5,8 @@ __pycache__
 ../build
 dist
 *egg-info
-*.pyc
 
-
+/archive
+/byproduct
+/chaos
+/data

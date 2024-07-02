@@ -8,6 +8,7 @@ description = "Python skeleton project"
 readme = "README.md"
 license = { file = "LICENSE.md" }
 authors = [
+    { name = "Yizhen Wang", email = "yizhen.wang@imtek.uni-freiburg.de" },
     { name = "Lars Pastewka", email = "lars.pastewka@imtek.uni-freiburg.de" }
 ]
 classifiers = [
@@ -18,7 +19,9 @@ requires-python = ">=3.8.0"
 dynamic = [ "version" ]
 dependencies = [
     "numpy",
-    "scipy"
+    "scipy",
+    "matplotlib",
+    "PyQt6"
 ]
 
 [project.optional-dependencies]
