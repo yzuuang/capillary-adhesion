@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 from a_package.data_record import DropletData
 from a_package.roughness import generate_isotropic_psd
@@ -76,6 +77,7 @@ def plot_phase_field_over_gap_topography(ax: plt.Axes, data: DropletData):
     phi = data.phi.copy()
     phi_perimeter = np.ma.masked_where((phi < 0+eps) | (phi > 1-eps), phi)
     ax.imshow(phi_perimeter, vmin=0.0, vmax=2.0, cmap="afmhot", extent=border)
+    # ax.imshow(phi_perimeter, vmin=0.0, vmax=1.0, cmap="cividis", extent=border)
 
     # plot the solid at contact
     phi[g_dimensionless <= 0] = 2.0
@@ -207,42 +209,16 @@ def latexify_plot(font_size: int):
     }
     matplotlib.rcParams.update(params)
 
-def overview_record(many_data: list[DropletData]):
-    # Each result is showed as 1 topography and 1 cross-section at top and bottom respectively.
-    # There are maximal `num_result_per_column` x `num_column` shown in one figure.
-    num_result_per_column = 3
-    num_row = num_result_per_column * 2
-    num_column = 10
-    max_result_per_figure = num_result_per_column * num_column
 
-    # compute the number of figures required
-    num_result = len(many_data)
-    num_fig = num_result // max_result_per_figure
-    if num_result % max_result_per_figure > 0:
-        num_fig += 1
+def overview_droplet_evolution(many_data: list[DropletData]):
+    fig, axs = plt.subplots(2, 1, gridspec_kw={"height_ratios": [0.6, 1]})
 
-    # create and pack figs, axs
-    figs = []
-    axs_topo = []
-    axs_cross = []
-    for _ in range(num_fig):
-        fig, axs = plt.subplots(num_row, num_column, figsize=(1.6 * num_column, 1.6 * num_row),
-                                gridspec_kw={'height_ratios': np.tile([1, 0.5], num_result_per_column)},
-                                sharex="col", sharey="row", constrained_layout=True)
-        figs.append(fig)
-        axs_topo.extend(axs[0::2].ravel())
-        axs_cross.extend(axs[1::2].ravel())
+    def update_image(frame: int):
+        for ax in axs:
+            ax.clear()
+        # TODO: don't compute forces in plotting
+        # plot_force(axs[0], many_data[0:frame+1])
+        plot_phase_field_over_gap_topography(axs[1], many_data[frame])
+        return [axs[0].lines, axs[1].images]
 
-    # plotting
-    N = many_data[0].N
-    idx_row = N // 2
-    for j, data in enumerate(many_data):
-        # plot_phase_field_topography(axs_topo[j], data)
-        plot_phase_field_over_gap_topography(axs_topo[j], data)
-        axs_topo[j].axhline(data.y[idx_row] / data.eta, color="C0")
-        plot_cross_section_sketch(axs_cross[j], data, idx_row)
-
-    # add figure super-title
-    data = many_data[0]
-    for idx_fig, fig in enumerate(figs):
-        fig.suptitle(fr"Figure ({idx_fig+1}): Resolution {data.M}x{data.N}, $L={data.L/data.eta}\eta, V={data.V/data.eta**3}\eta^3$")
+    return animation.FuncAnimation(fig, update_image, len(many_data))

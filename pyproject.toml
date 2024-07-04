@@ -3,7 +3,7 @@ requires = ["flit_core>=3.2"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "python-skeleton"
+name = "a_package"
 description = "Python skeleton project"
 readme = "README.md"
 license = { file = "LICENSE.md" }

@@ -6,6 +6,7 @@ import numpy as np
 
 # WARN: modifying these data classes usually implies to update all the data records!
 # TODO: how to overcome that? (dict? json?)
+# TODO: how to include post-process values (e.g. forces) ?
 
 
 @dc.dataclass
