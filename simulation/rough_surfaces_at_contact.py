@@ -13,8 +13,8 @@ if __name__ == "__main__":
     L = 10.0    # lateral size
     V = 10.0    # volume of the droplet
     eta = 0.05  # interface width
-    M = 200     # num of pixels along x-axis
-    N = 200     # num of pixels along y-axis
+    M = 1000    # num of pixels along x-axis
+    N = 1000    # num of pixels along y-axis
 
     # derived from primary ones
     dx = L / M
@@ -25,22 +25,17 @@ if __name__ == "__main__":
     # random initial guess
     phi_init = random.rand(M, N)
 
-    def generate_rough_surface():
-        # TODO: try different roughness and initial guess until more than one droplets
-        # generate roughness
-        C0 = 1e7
-        qL = 1e-1  # ?name
-        qR = 2e0  # roll-off
-        qS = 2e1  # cut-off
-        H = 0.95  # Hurst exponent
-        n_spectrum = 100  # samples in spectral domain
-        q_iso, C_iso = generate_isotropic_psd(C0, qL, qR, qS, H, n_spectrum)
-        qx, qy, C_2d = interpolate_isotropic_psd_in_2d(q_iso, C_iso, M, dx, N, dy)
-        return convert_psd_to_surface(C_2d)
+    # generate roughness PSD
+    C0 = 1e7
+    qR = 2e0  # roll-off
+    qS = 2e1  # cut-off
+    H = 0.95  # Hurst exponent
+    q_mapto_C = generate_isotropic_psd(C0, qR, qS, H)
+    qx, qy, C_2d = interpolate_isotropic_psd_in_2d(M, dx, N, dy, q_mapto_C)
 
-    # random rough surface
-    h1 = generate_rough_surface()
-    h2 = generate_rough_surface()
+    # from PSD to random surface roughness
+    h1 = convert_psd_to_surface(C_2d)
+    h2 = convert_psd_to_surface(C_2d)
 
     # data holder
     data = DropletData(
@@ -48,9 +43,9 @@ if __name__ == "__main__":
     )
 
     # simulating routine
-    d_min = 2 * data.eta
-    d_max = 10 * data.eta
-    d_step = 0.02
+    d_min = 3 * data.eta
+    d_max = 9 * data.eta
+    d_step = 0.2 * data.eta
     rec = sim_quasi_static_pull_push(data, phi_init, d_min, d_max, d_step)
 
     # save

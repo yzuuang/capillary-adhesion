@@ -6,7 +6,7 @@ from .droplet import CapillaryDroplet
 
 
 tol_min = 1e-8
-max_iter = 2000
+max_iter = 3000
 tol_lam = 1e-4
 beta = 3.0
 c_max_over_mean = 1e5

@@ -126,6 +126,16 @@ class QuadratureRoughDroplet(CapillaryDroplet):
         perimeter = self.eta * (self.phi_dx**2 + self.phi_dy**2)
         return ((double_well + perimeter) * self.g_triangle).sum() * self.triangle_area
 
+    def compute_force(self) -> float:
+        # update necessary power terms
+        self.phi_power[1] = self.phi_power[0]**2
+        self.phi_power[2] = self.phi_power[0] * self.phi_power[1]
+        self.phi_power[3] = self.phi_power[1]**2
+        # compute values at grid points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
+        double_well = (1/self.eta) * (self.phi_power[1] - 2*self.phi_power[2] + self.phi_power[3])
+        perimeter = self.eta * (self.phi_dx**2 + self.phi_dy**2)
+        return -(double_well + perimeter).sum() * self.triangle_area
+
     def compute_energy_jacobian(self) -> np.ndarray:
         # update necessary power terms
         self.phi_power[1] = self.phi_power[0]**2

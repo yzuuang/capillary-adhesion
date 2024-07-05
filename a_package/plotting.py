@@ -5,7 +5,6 @@ import matplotlib.animation as animation
 
 from a_package.data_record import DropletData
 from a_package.roughness import generate_isotropic_psd
-from a_package.droplet import QuadratureRoughDroplet
 
 
 eps = 1e-1  # cut off value to decide one phase
@@ -93,74 +92,29 @@ def demonstrate_dynamics(ax: plt.Axes, many_data: list[DropletData]):
     ax.plot(many_d/eta)
 
 
-# TODO: have a separate plot energy and plot force
-# IDEA: should Energy be considered as "post-processing"
-
 def plot_energy(ax: plt.Axes, many_data: list[DropletData]):
     # extract data
     eta = many_data[0].eta
     many_d = np.stack([data.d for data in many_data])
+    # TODO: better data_record?
+    many_E = np.stack([getattr(data, "E") for data in many_data])
 
-    # compute energy from the given data
-    many_E = np.empty(len(many_data))
-    for i, data in enumerate(many_data):
-        droplet = QuadratureRoughDroplet(
-            data.phi, data.h1, data.h2, data.d, data.eta, data.M, data.N, data.dx, data.dy
-        )
-        droplet.update_separation(data.d)
-        droplet.update_phase_field(data.phi.ravel())
-        E = droplet.compute_energy()
-        many_E[i] = E
+    # split the data into "pull" and "push"
+    # TODO: cannot tell "orphan" data points
+    pull = np.diff(many_d, prepend=many_d[0]) >= 0
+    push = np.diff(many_d, prepend=many_d[0]) < 0
 
-    # split departing and approaching by the index at half size
-    key_index = len(many_d) // 2
-    all_d_pull = many_d[:key_index]
-    all_d_push = many_d[key_index:]
-    all_E_pull = many_E[:key_index]
-    all_E_push = many_E[key_index:]
+    all_d_pull = many_d[pull]
+    all_E_pull = many_E[pull]
+    all_d_push = many_d[push]
+    all_E_push = many_E[push]
 
     # plotting
-    ax.plot(all_d_pull/eta, all_E_pull/eta, "rx-", ms=8, mfc="none", label="retraction")
-    ax.plot(all_d_push/eta, all_E_push/eta, "bo--", ms=8, mfc="none", label="approach")
+    ax.plot(all_d_pull/eta, all_E_pull/eta**2, "rx-", ms=8, mfc="none", label="retraction")
+    ax.plot(all_d_push/eta, all_E_push/eta**2, "bo--", ms=8, mfc="none", label="approach")
 
     # format the plot
-    ax.legend(loc="upper right")
-    ax.grid()
-
-
-def plot_force(ax: plt.Axes, many_data: list[DropletData]):
-    # extract data
-    eta = many_data[0].eta
-    many_d = np.stack([data.d for data in many_data])
-
-    # compute energy from the given data
-    many_E = np.empty(len(many_data))
-    for i, data in enumerate(many_data):
-        droplet = QuadratureRoughDroplet(
-            data.phi, data.h1, data.h2, data.d, data.eta, data.M, data.N, data.dx, data.dy
-        )
-        droplet.update_separation(data.d)
-        droplet.update_phase_field(data.phi.ravel())
-        E = droplet.compute_energy()
-        many_E[i] = E
-
-    # split departing and approaching by the index at half size
-    key_index = len(many_d) // 2
-
-    # compute force with finite difference method
-    all_F_pull = -np.diff(many_E[:key_index]) / np.diff(many_d[:key_index])
-    all_F_push = -np.diff(many_E[key_index:]) / np.diff(many_d[key_index:])
-
-    # as a result of FD, the mean distance should be middle values
-    all_mid_d_pull = (many_d[:key_index - 1] + many_d[1:key_index]) / 2
-    all_mid_d_push = (many_d[key_index:-1] + many_d[key_index + 1:]) / 2
-
-    # plotting
-    ax.plot(all_mid_d_pull/eta, all_F_pull/eta, "rx-", ms=8, mfc="none", label="retraction")
-    ax.plot(all_mid_d_push/eta, all_F_push/eta, "bo--", ms=8, mfc="none", label="approach")
-
-    # format the plot
-    ax.legend(loc="upper right")
+    ax.legend(loc="lower right")
     ax.grid()
 
 
@@ -182,6 +136,32 @@ def plot_PSD(ax: plt.Axes):
     ax.axvline(abs(qx[qx.nonzero()]).min(), color="r", linestyle="--")
     ax.axvline(qx.max(), color="r", linestyle="--")
 
+    ax.grid()
+
+
+def plot_force(ax: plt.Axes, many_data: list[DropletData]):
+    # extract data
+    eta = many_data[0].eta
+    many_d = np.stack([data.d for data in many_data])
+    # TODO: better data_record?
+    many_F = np.stack([getattr(data, "F") for data in many_data])
+
+    # split the data into "pull" and "push"
+    # TODO: cannot tell "orphan" data points
+    pull = np.diff(many_d, prepend=many_d[0]) >= 0
+    push = np.diff(many_d, prepend=many_d[0]) < 0
+
+    d_pull = np.array(many_d[pull])
+    f_pull = np.array(many_F[pull])
+    d_push = np.array(many_d[push])
+    f_push = np.array(many_F[push])
+
+    # compute force and plotting
+    ax.plot(d_pull/eta, f_pull/eta, color="r", linestyle="-", marker="o", mfc="none", label="retraction")
+    ax.plot(d_push/eta, f_push/eta, color="b", linestyle="--", marker="x", mfc="none", label="approach")
+
+    # format the plot
+    ax.legend()
     ax.grid()
 
 
@@ -211,14 +191,20 @@ def latexify_plot(font_size: int):
 
 
 def overview_droplet_evolution(many_data: list[DropletData]):
+    eta = many_data[0].eta
+    many_d = np.stack([data.d for data in many_data])
+    d_ax_min = many_d.min() / eta - 0.5
+    d_ax_max = many_d.max() / eta + 0.5
+
     fig, axs = plt.subplots(2, 1, gridspec_kw={"height_ratios": [0.6, 1]})
 
     def update_image(frame: int):
         for ax in axs:
             ax.clear()
-        # TODO: don't compute forces in plotting
-        # plot_force(axs[0], many_data[0:frame+1])
+        if frame > 0:
+            plot_force(axs[0], many_data[0:1+frame])
+        axs[0].set_xlim(d_ax_min, d_ax_max)
         plot_phase_field_over_gap_topography(axs[1], many_data[frame])
         return [axs[0].lines, axs[1].images]
 
-    return animation.FuncAnimation(fig, update_image, len(many_data))
+    return animation.FuncAnimation(fig, update_image, len(many_data), interval=500, repeat_delay=3000)
