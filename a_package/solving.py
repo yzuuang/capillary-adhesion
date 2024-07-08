@@ -5,18 +5,18 @@ from scipy.optimize import fmin_l_bfgs_b
 from .droplet import CapillaryDroplet
 
 
-tol_min = 1e-8
-max_iter = 3000
-tol_lam = 1e-4
+tol_grad = 1e-6
+max_iter = 2000
+tol_lam = 1e-3
+c_init = 1e-3
+c_max = 1e3
 beta = 3.0
-c_max_over_mean = 1e5
 
 
 # NOTE: keep the same formulation of volume constraint, h := V(phi, g) - V*
 def solve_augmented_lagrangian(phi_init: np.ndarray, droplet: CapillaryDroplet, V: float):
     lam = 0.0
-    c = 1e-2
-    c_max = c_max_over_mean * c
+    c = c_init
 
     t_exec = 0 - timeit.default_timer()
     for i in range(20):
@@ -32,7 +32,7 @@ def solve_augmented_lagrangian(phi_init: np.ndarray, droplet: CapillaryDroplet, 
             args=(lam, c, droplet, V),
             fprime=augmented_lagrangian_jacobian,
             factr=1e1,
-            pgtol=tol_min,
+            pgtol=tol_grad,
             maxiter=max_iter,
 	        # disp=True,
         )

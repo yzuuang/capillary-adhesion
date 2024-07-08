@@ -190,7 +190,7 @@ def latexify_plot(font_size: int):
     matplotlib.rcParams.update(params)
 
 
-def overview_droplet_evolution(many_data: list[DropletData]):
+def animate_droplet_evolution_with_force_curve(many_data: list[DropletData]):
     eta = many_data[0].eta
     many_d = np.stack([data.d for data in many_data])
     d_ax_min = many_d.min() / eta - 0.5
@@ -201,8 +201,7 @@ def overview_droplet_evolution(many_data: list[DropletData]):
     def update_image(frame: int):
         for ax in axs:
             ax.clear()
-        if frame > 0:
-            plot_force(axs[0], many_data[0:1+frame])
+        plot_force(axs[0], many_data[0:1+frame])
         axs[0].set_xlim(d_ax_min, d_ax_max)
         plot_phase_field_over_gap_topography(axs[1], many_data[frame])
         return [axs[0].lines, axs[1].images]
