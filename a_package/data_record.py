@@ -4,9 +4,18 @@ import uuid
 import numpy as np
 
 
-# WARN: modifying these data classes usually implies to update all the data records!
-# TODO: how to overcome that? (dict? json?)
+from typing import TypedDict, Required
+
+
+
+# TODO: what to include in the record. The Dict returned from the inner solver shall also be dumped.
 # TODO: how to include post-process values (e.g. forces) ?
+# TODO: allow the data to be saved for each quasi-static state and possibly each solution to a inner problem of AL.
+#########################
+# IDEA: here loading and saving all based on some dictionary-like structure. So it can be easily modified to fit
+# into either HDF5 file format or DTool infrastructure. And maintain its flexibility.
+#   Use somewhat "dynamic" types like pandas or datatable?
+#   They support accessing by `.column`, which is compatible with the current code
 
 
 @dc.dataclass
@@ -40,5 +49,5 @@ def save_record(r: Record, filepath):
 
 def load_record(filepath):
     with open(filepath, "rb") as fp:
-        r:Record = pickle.load(fp)
+        r: Record = pickle.load(fp)
     return r
