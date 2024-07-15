@@ -50,14 +50,13 @@ _label = "this is created by test"
 
 def test_save_load_flat():
     test_data = SomeDataclass.random()
-    save(_folder, _label, dc.asdict(test_data))
-    loaded_test_data = SomeDataclass(**load(_folder, _label))
+    save(_folder, f"{_label} flat", test_data)
+    loaded_test_data = load(_folder, f"{_label} flat", SomeDataclass)
     assert_equal(loaded_test_data, test_data)
 
 
 def test_save_load_nested():
     test_data = NestedDataclass([SomeDataclass.random() for _ in range(11)])
-    save(_folder, _label, dc.asdict(test_data))
-    loaded_test_data = NestedDataclass(
-        record=[SomeDataclass(**element) for element in load(_folder, _label)['record']])
+    save(_folder, f"{_label} nested", test_data)
+    loaded_test_data = load(_folder, f"{_label} nested", NestedDataclass)
     assert_equal(loaded_test_data, test_data)
