@@ -1,23 +1,51 @@
 import dataclasses as dc
-import pickle
+import typing as t_
 import uuid
 import numpy as np
 
 
-from typing import TypedDict, Required
+@dc.dataclass
+class NumOptEq:
+    """Numerical optimization problem with equality constraints.
 
+    x* = arg min f(x)
+
+    s.t. g(x) = 0
+    """
+
+    f: t_.Callable[[np.ndarray], float]
+    """
+    def f(x: np.ndarray) -> float: ...
+    """
+
+    f_grad: t_.Callable[[np.ndarray], np.ndarray]
+    """
+    def f_grad(x: np.ndarray) -> np.ndarray: ...
+    """
+
+    g: t_.Callable[[np.ndarray], float]
+    """
+    def g(x: np.ndarray) -> float: ...
+    """
+
+    g_grad: t_.Callable[[np.ndarray], np.ndarray]
+    """
+    def g_grad(x: np.ndarray) -> np.ndarray: ...
+    """
 
 
 # TODO: what to include in the record. The Dict returned from the inner solver shall also be dumped.
 # TODO: how to include post-process values (e.g. forces) ?
 # TODO: allow the data to be saved for each quasi-static state and possibly each solution to a inner problem of AL.
-#########################
-# IDEA: here loading and saving all based on some dictionary-like structure. So it can be easily modified to fit
-# into either HDF5 file format or DTool infrastructure. And maintain its flexibility.
-#   Use somewhat "dynamic" types like pandas or datatable?
-#   They support accessing by `.column`, which is compatible with the current code
+
+@dc.dataclass
+class SimulationResult:
+    eta: float
+    phi: np.ndarray
+    t_exec: float
 
 
+# something make it easy for visualizing.plot_xxx() ?
 @dc.dataclass
 class DropletData:
     V: float         # volume of the droplet
@@ -40,14 +68,3 @@ class Record:
     data: list[DropletData]  # think as if taking snapshots
     init_guess: np.ndarray
     ID: str = dc.field(default_factory=uuid.uuid4)  # for the sake of a unique ID
-
-
-def save_record(r: Record, filepath):
-    with open(filepath, "wb") as fp:
-        pickle.dump(r, fp)
-
-
-def load_record(filepath):
-    with open(filepath, "rb") as fp:
-        r: Record = pickle.load(fp)
-    return r

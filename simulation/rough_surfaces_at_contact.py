@@ -1,51 +1,50 @@
-import numpy as np
 import numpy.random as random
 
-from a_package.data_record import DropletData, save_record
-from a_package.roughness import generate_isotropic_psd, interpolate_isotropic_psd_in_2d, convert_psd_to_surface
+from a_package.modelling import Region, wavevector_norm, SelfAffineRoughness, PSD_to_height, CapillaryBridge
+from a_package.solving import AugmentedLagrangian
 from a_package.routine import sim_quasi_static_pull_push
 
 
 if __name__ == "__main__":
-    # primary parameters
+    # modelling parameters
     eta = 0.05  # interface width
     L = 1e3 * eta     # lateral size
-    V = 1e6 * eta**3  # volume of the droplet
-    M = 1000    # num of pixels along x-axis
-    N = 1000    # num of pixels along y-axis
+    V = 2e6 * eta**3  # volume of the droplet
+    N = 200  # num of nodes along one axis
 
-    # derived from primary ones
-    dx = L / M
-    dy = L / N
-    x = np.arange(M) * dx
-    y = np.arange(N) * dy
+    # the region where simulation runs
+    region = Region(L, L, N, N)
 
-    # random initial guess
-    phi_init = random.rand(M, N)
-
-    # generate roughness PSD
+    # generate rough plates
     C0 = 1e8  # prefactor
     qR = 2e0  # roll-off
     qS = 2e1  # cut-off
     H = 0.95  # Hurst exponent
-    q_mapto_C = generate_isotropic_psd(C0, qR, qS, H)
-    qx, qy, C_2d = interpolate_isotropic_psd_in_2d(M, dx, N, dy, q_mapto_C)
+    roughness = SelfAffineRoughness(C0, qR, qS, H)
+    q_2D = wavevector_norm(region.qx, region.qy)
+    C_2D = roughness.mapto_psd(q_2D)
+    h1 = PSD_to_height(C_2D)
+    h2 = PSD_to_height(C_2D)
 
-    # from PSD to random surface roughness
-    h1 = convert_psd_to_surface(C_2d)
-    h2 = convert_psd_to_surface(C_2d)
+    # random phase field to start
+    rng = random.default_rng()
+    phi = rng.random((N, N))
 
-    # data holder
-    data = DropletData(
-        V, eta, L, M, N, phi_init, h1, h2, 0.0, x, y, dx, dy
-    )
+    # combine into the model object
+    capi = CapillaryBridge(region, eta, h1, h2, phi)
 
-    # simulating routine
-    d_min = 3 * data.eta
-    d_max = 9 * data.eta
-    d_step = 0.2 * data.eta
-    rec = sim_quasi_static_pull_push(data, phi_init, d_min, d_max, d_step)
+    # solving parameters
+    k_max = 2000
+    e_conv = 1e-6
+    e_volume = 1e-4
+    c_init = 1e-3
+    c_upper = 1e3
+    beta = 3.0
 
-    # save
-    filename = f"{__file__}.data"
-    save_record(rec, filename)
+    solver = AugmentedLagrangian(k_max, e_conv, e_volume, c_init, c_upper, beta)
+
+    # run simulation routine
+    d_min = 3 * eta
+    d_max = 9 * eta
+    d_step = 0.2 * eta
+    sim_quasi_static_pull_push(capi, solver, V, d_min, d_max, d_step)
