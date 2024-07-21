@@ -52,3 +52,5 @@ def simulate_quasi_static_pull_push(capi: CapillaryBridge, solver: AugmentedLagr
         # save the result
         data = SimulationResult(d, V, capi.phi, t_exec)
         save(path, f"simulation---result---{index}", data)
+
+    pack(path)
