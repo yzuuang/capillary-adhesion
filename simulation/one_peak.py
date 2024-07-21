@@ -2,6 +2,7 @@ import numpy as np
 
 from a_package.modelling import Region, wavevector_norm, SelfAffineRoughness, PSD_to_height, CapillaryBridge
 from a_package.solving import AugmentedLagrangian
+from a_package.storing import working_directory
 from a_package.routine import simulate_quasi_static_pull_push
 
 
@@ -50,4 +51,6 @@ if __name__ == "__main__":
     d_min = 3 * eta
     d_max = 9 * eta
     d_step = 0.2 * eta
-    simulate_quasi_static_pull_push(capi, solver, V, d_min, d_max, d_step)
+    path = __file__.replace(".py", ".data")
+    with working_directory(path, read_only=False) as store:
+        simulate_quasi_static_pull_push(store, capi, solver, V, d_min, d_max, d_step)

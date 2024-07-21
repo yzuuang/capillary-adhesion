@@ -1,37 +1,85 @@
 """
-Simulation routines.
+Simulation routines: modelling, solving and post-processing.
 """
 
 import dataclasses as dc
-import datetime as dt
 import math
 
 import numpy as np
 
 from a_package.modelling import CapillaryBridge
 from a_package.solving import AugmentedLagrangian
-from a_package.storing import save, pack
+from a_package.storing import FilesToReadWrite
 
 
 @dc.dataclass
-class SimulationResult:
+class SimulationStep:
     d: float
     V: float
     phi: np.ndarray
     t_exec: float
 
 
+@dc.dataclass
+class SimulationResult:
+    modelling: CapillaryBridge
+    solving: AugmentedLagrangian
+    steps: list[SimulationStep]
 
-def simulate_quasi_static_pull_push(capi: CapillaryBridge, solver: AugmentedLagrangian, V: float, d_min: float, d_max: float, d_step: float):
-    # use timestamp to differ paths for storing data
-    # TODO: maybe, the "difference" consideration should be in `storing`?
-    timestamp = dt.datetime.now(tz=dt.timezone.utc).isoformat(timespec="seconds")
-    path = f"{__file__.removesuffix('.py')}---pull_push---{timestamp}"
-    print(__name__)
 
+def post_process(res: SimulationResult):
+    # allocate memory
+    num_steps = len(res.steps)
+    t = np.empty(num_steps)
+    phi = []
+    d = np.empty(num_steps)
+    V = np.empty(num_steps)
+    E = np.empty(num_steps)
+    F = np.empty(num_steps)
+
+    # model for computing extra quantities
+    capi = res.modelling
+
+    # data "rows" to "columns"
+    for i, step in enumerate(res.steps):
+        t[i] = step.t_exec
+        phi.append(step.phi)
+        d[i] = step.d
+
+        capi.phi = step.phi
+        capi.update_separation(d[i])
+        V[i] = capi.compute_volume()
+        E[i] = capi.compute_energy()
+        F[i] = capi.compute_force()
+
+    # pack in an object
+    evo = Evolution(t, phi, d, V, E, F)
+    return ProcessedResult(res.modelling, res.solving, evo)
+
+
+@dc.dataclass
+class Evolution:
+    t_exec: np.ndarray
+    phi: list[np.ndarray]
+    d: np.ndarray
+    V: np.ndarray
+    E: np.ndarray
+    F: np.ndarray
+
+
+@dc.dataclass
+class ProcessedResult:
+    modelling: CapillaryBridge
+    solving: AugmentedLagrangian
+    evolution: Evolution
+
+
+def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
+                                    V: float, d_min: float, d_max: float, d_step: float):
     # save the configurations
-    save(path, "modelling", capi)
-    save(path, "solving", solver)
+    store.save("Simulation", "modelling", capi)
+    store.save("Simulation", "solving", solver)
+    sim = SimulationResult("modelling.json", "solving.json", [])
 
     # generate all `d` (mean distances) values
     num_d = math.floor((d_max - d_min) / d_step) + 1
@@ -44,22 +92,25 @@ def simulate_quasi_static_pull_push(capi: CapillaryBridge, solver: AugmentedLagr
           f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}")
 
     # simulate
+    x = capi.phi.ravel()
     for index, d in enumerate(all_d):
         # update the parameter
         print(f""
               f"Parameter of interest: mean distance={d}")
         capi.update_separation(d)
 
-        # clean the phase field where the solid bodies contact
-        capi.phi[capi.at_contact] = 0.
-
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        capi.phi[:], t_exec = solver.solve_minimisation(numopt, capi.phi)
-        capi.validate_phase_field()
+        x, t_exec = solver.solve_minimisation(numopt, x)
 
         # save the result
-        data = SimulationResult(d, V, capi.phi, t_exec)
-        save(path, f"simulation---result---{index}", data)
+        data = SimulationStep(d, V, capi.phi, t_exec)
+        store.save("Simulation", f"steps---{index}", data)
+        sim.steps.append(f"steps---{index}.json")
 
-    pack(path)
+    store.save("Simulation", "result", sim)
+
+    # reload to get all data in memory and post-process
+    sim = store.load("Simulation", "result", SimulationResult)
+    p_sim = post_process(sim)
+    store.save("Processed", "result", p_sim)

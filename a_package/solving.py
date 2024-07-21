@@ -71,7 +71,7 @@ class AugmentedLagrangian:
                 return numopt.f_grad(x) + (lam + c * numopt.g(x)) * numopt.g_grad(x)
 
             # solve minimization problem
-            t_exec -= timeit.default_timer()
+            t_exec_sub = -timeit.default_timer()
             [x_plus, l_plus, info] = optimize.fmin_l_bfgs_b(
                 l,
                 x_plus,  # old solution as new initial guess
@@ -80,12 +80,13 @@ class AugmentedLagrangian:
                 pgtol=self.tol_convergence,
                 maxiter=self.inner_max_iter,
             )
-            t_exec += timeit.default_timer()
+            t_exec_sub += timeit.default_timer()
+            t_exec += t_exec_sub
 
             # inform
             info['max_grad'] = max(info['grad'])
             del info['grad']
-            print(f"iter #{k}, time={round(t_exec)}s, lam={lam:.2e}, c={c:.2e}, {info}")
+            print(f"iter #{k} T{round(t_exec_sub)}s, lam={lam:.2e}, c={c:.2e}, {info}")
 
             # convergence criteria
             error_g_x = numopt.g(x_plus)

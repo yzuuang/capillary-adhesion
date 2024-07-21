@@ -47,7 +47,8 @@ class SelfAffineRoughness:
     def mapto_psd(self, q: np.ndarray):
         C = np.empty_like(q)
         C[q < self.qR] = self.C0 * self.qR ** (-2 - 2 * self.H)
-        C[(q >= self.qR) & (q < self.qS)] = self.C0 * q[(q >= self.qR) & (q < self.qS)] ** (-2 - 2 * self.H)
+        self_affine_regime = (q >= self.qR) & (q < self.qS)
+        C[self_affine_regime] = self.C0 * q[self_affine_regime] ** (-2 - 2 * self.H)
         C[q >= self.qS] = 0
         return C
 
@@ -78,11 +79,6 @@ class CapillaryBridge:
 
     def __init__(self, region: Region, eta: float, h1: np.ndarray, h2: np.ndarray, phi: np.ndarray):
         self.region = region
-        self.eta = eta
-        self.h1 = np.ravel(h1)
-        self.h2 = np.ravel(h2)
-        self.phi = np.ravel(phi)
-
         M = region.nx
         N = region.ny
         MN = M * N
@@ -124,11 +120,16 @@ class CapillaryBridge:
         self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / region.dy
         self.Dy_t = sparse.csr_matrix(self.Dy.T)
 
-        # memory of phase-field related terms
+        self.eta = eta
+
+        self.h1_origin = h1
+        self.h2_origin = h2
+        self.h1 = h1
+        self.h2 = h2
+
         num_triangle = 2  # numer of triangles per pixel
 
         self.g_triangle = np.empty((num_triangle * MN))  # average of a triangle
-        self.at_contact = []
 
         poly_deg = 4  # max degree of polymers
         self.phi_power = np.empty((poly_deg, num_triangle * MN))
@@ -141,17 +142,39 @@ class CapillaryBridge:
         """
         self.phi_dx = np.empty((num_triangle * MN))
         self.phi_dy = np.empty((num_triangle * MN))
-        self._update_phase_field(self.phi)
+        self.phi = phi
 
         num_quadrature = 1  # number of quadrature points per triangle
         self.weight = np.ones((1, num_triangle * num_quadrature * MN), dtype=float)
         self.triangle_area = 0.5 * region.dx * region.dy
 
-    def _update_phase_field(self, phi_flat) -> None:
-        """Update the memory to use for computation but not the phase-field attribute."""
-        self.phi_power[0] = self.K_centroid @ phi_flat
-        self.phi_dx[:] = self.Dx @ phi_flat
-        self.phi_dy[:] = self.Dy @ phi_flat
+    @property
+    def h1(self):
+        return np.reshape(self._h1, (self.region.nx, self.region.ny))
+
+    @h1.setter
+    def h1(self, h1: np.ndarray):
+        self._h1 = h1.ravel()
+
+    @property
+    def h2(self):
+        return np.reshape(self._h2, (self.region.nx, self.region.ny))
+
+    @h2.setter
+    def h2(self, h2: np.ndarray):
+        self._h2 = h2.ravel()
+
+    @property
+    def phi(self):
+        return np.reshape(self._phi, (self.region.nx, self.region.ny))
+
+    @phi.setter
+    def phi(self, phi: np.ndarray):
+        self._phi = phi.ravel()
+        # update memory for calculation
+        self.phi_power[0] = self.K_centroid @ self._phi
+        self.phi_dx = self.Dx @ self._phi
+        self.phi_dy = self.Dy @ self._phi
 
     def validate_phase_field(self):
         # phase field < 0
@@ -168,12 +191,18 @@ class CapillaryBridge:
             extreme = np.nanmax(outlier)
             print(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
 
-    def update_separation(self, d) -> None:
-        g_grid = (self.h1 - self.h2).ravel() + d
+    def update_displacement(self, m1: tuple[int, int], z1: float):
+        # NOTE: 1 refers to the rigid body at top, 2 refers to the one at base
+        # slide of the top
+        self.h1 = np.roll(self.h1_origin, m1)  # due to periodic boundary
+        g_grid = self._h1 - self._h2 + z1
         # check contact
-        self.at_contact = g_grid < 0
-        g_grid[self.at_contact] = 0
-        self.g_triangle[:] = self.K_centroid @ g_grid  # triangular average
+        at_contact = g_grid < 0
+        # set the phase-field and gap values at contact to 0
+        self._phi[at_contact] = 0
+        g_grid[at_contact] = 0
+        # update memory for calculation
+        self.g_triangle = self.K_centroid @ g_grid  # triangular average
 
     def compute_energy(self) -> float:
         # update necessary power terms
@@ -193,7 +222,11 @@ class CapillaryBridge:
         # compute values at grid points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
         double_well = (1 / self.eta) * (self.phi_power[1] - 2 * self.phi_power[2] + self.phi_power[3])
         perimeter = self.eta * (self.phi_dx ** 2 + self.phi_dy ** 2)
-        return -(double_well + perimeter).sum() * self.triangle_area
+        dE_dg = -(double_well + perimeter).sum() * self.triangle_area
+        # now the differences in three components
+        dg_dx = self.Dx @ self._h1 - self.Dx @ self._h2
+        dg_dy = self.Dy @ self._h1 - self.Dy @ self._h2
+        dg_dz = 1
 
     def compute_energy_jacobian(self) -> np.ndarray:
         # update necessary power terms
@@ -215,19 +248,19 @@ class CapillaryBridge:
 
     def formulate_with_constant_volume(self, volume: float):
         def f(x: np.ndarray):
-            self._update_phase_field(x)
+            self.phi = x
             return self.compute_energy()
 
         def f_grad(x: np.ndarray):
-            self._update_phase_field(x)
+            self.phi = x
             return self.compute_energy_jacobian()
 
         def g(x: np.ndarray):
-            self._update_phase_field(x)
+            self.phi = x
             return self.compute_volume() - volume
 
         def g_grad(x: np.ndarray):
-            self._update_phase_field(x)
+            self.phi = x
             return self.compute_volume_jacobian()
 
         return NumOptEq(f, f_grad, g, g_grad)

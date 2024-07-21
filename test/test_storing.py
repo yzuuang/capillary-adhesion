@@ -6,7 +6,7 @@ import dataclasses as dc
 import numpy as np
 import numpy.random as random
 
-from a_package.storing import save, load
+from a_package.storing import working_directory
 
 
 _rng = random.default_rng()
@@ -48,19 +48,33 @@ def assert_equal(loaded, saved):
             assert np.all(loaded_value == saved_value), f"The loaded {field.name} data is not the same as the saved."
 
 
-_folder = __file__.replace(".py", "_folder")
-_label = "this is created by test"
+_path = __file__.replace(".py", "_path_root")
+_group = "some group"
+_common_label = "some dataset"
 
 
 def test_save_load_flat():
-    test_data = SomeDataclass.random()
-    save(_folder, f"{_label} flat", test_data)
-    loaded_test_data = load(_folder, f"{_label} flat", SomeDataclass)
+    label = f"{_common_label} flat"
+
+    with working_directory(_path, read_only=False) as store:
+        store.brand_new()
+        test_data = SomeDataclass.random()
+        store.save(_group, label, test_data)
+
+    with working_directory(_path, read_only=True) as store:
+        loaded_test_data = store.load(_group, label, SomeDataclass)
+
     assert_equal(loaded_test_data, test_data)
 
 
 def test_save_load_nested():
-    test_data = NestedDataclass([SomeDataclass.random() for _ in range(11)])
-    save(_folder, f"{_label} nested", test_data)
-    loaded_test_data = load(_folder, f"{_label} nested", NestedDataclass)
+    label = f"{_common_label} nested"
+
+    with working_directory(_path, read_only=False) as store:
+        test_data = NestedDataclass([SomeDataclass.random() for _ in range(11)])
+        store.save(_group, label, test_data)
+
+    with working_directory(_path, read_only=True) as store:
+        loaded_test_data = store.load(_group, label, NestedDataclass)
+
     assert_equal(loaded_test_data, test_data)
