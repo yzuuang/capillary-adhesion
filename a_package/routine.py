@@ -2,6 +2,7 @@
 Simulation routines.
 """
 
+import dataclasses as dc
 import datetime as dt
 import math
 
@@ -10,7 +11,15 @@ import numpy as np
 from a_package.modelling import CapillaryBridge
 from a_package.solving import AugmentedLagrangian
 from a_package.storing import save, pack
-from a_package.data_record import SimulationResult
+
+
+@dc.dataclass
+class SimulationResult:
+    d: float
+    V: float
+    phi: np.ndarray
+    t_exec: float
+
 
 
 def simulate_quasi_static_pull_push(capi: CapillaryBridge, solver: AugmentedLagrangian, V: float, d_min: float, d_max: float, d_step: float):

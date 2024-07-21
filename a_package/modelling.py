@@ -9,7 +9,7 @@ import numpy.fft as fft
 import numpy.random as random
 import scipy.sparse as sparse
 
-from a_package.data_record import NumOptEq
+from a_package.solving import NumOptEq
 
 
 @dc.dataclass

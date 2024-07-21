@@ -4,11 +4,40 @@ Solving the numerical optimization problem. No physics meaning in this file.
 
 import dataclasses as dc
 import timeit
+import typing as t_
 
 import numpy as np
 import scipy.optimize as optimize
 
-from a_package.data_record import NumOptEq
+
+@dc.dataclass
+class NumOptEq:
+    """Numerical optimization problem with equality constraints.
+
+    x* = arg min f(x)
+
+    s.t. g(x) = 0
+    """
+
+    f: t_.Callable[[np.ndarray], float]
+    """
+    def f(x: np.ndarray) -> float: ...
+    """
+
+    f_grad: t_.Callable[[np.ndarray], np.ndarray]
+    """
+    def f_grad(x: np.ndarray) -> np.ndarray: ...
+    """
+
+    g: t_.Callable[[np.ndarray], float]
+    """
+    def g(x: np.ndarray) -> float: ...
+    """
+
+    g_grad: t_.Callable[[np.ndarray], np.ndarray]
+    """
+    def g_grad(x: np.ndarray) -> np.ndarray: ...
+    """
 
 
 @dc.dataclass
@@ -56,7 +85,7 @@ class AugmentedLagrangian:
             # inform
             info['max_grad'] = max(info['grad'])
             del info['grad']
-            print(f"iter #{k}, time={t_exec}, lam={lam:.2e}, c={c:.2e}, {info}")
+            print(f"iter #{k}, time={round(t_exec)}s, lam={lam:.2e}, c={c:.2e}, {info}")
 
             # convergence criteria
             error_g_x = numopt.g(x_plus)

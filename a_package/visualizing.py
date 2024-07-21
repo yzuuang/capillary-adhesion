@@ -1,13 +1,38 @@
+import dataclasses as dc
+
 import numpy as np
+import numpy.fft as fft
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from a_package.data_record import DropletData
-from a_package.roughness import generate_isotropic_psd
+from a_package.modelling import Region, SelfAffineRoughness
 
 
-eps = 1e-1  # cut off value to decide one phase
+@dc.dataclass
+class DropletData:
+    V: float         # volume of the droplet
+    eta: float       # interfacial width
+    L: float         # length of the plate
+    M: int           # number of pixels along x-axis
+    N: int           # number of pixels along y-axis
+    phi: np.ndarray  # phase-field in 2D-array
+    h1: np.ndarray   # roughness of the 1 plate in 2D-array
+    h2: np.ndarray   # roughness of the 2 plate in 2D-array
+    d: float         # displacement between the baselines of two plates
+    x: np.ndarray    # grid locations along x-axis in 1D-array
+    y: np.ndarray    # grid locations along y-axis in 1D-array
+    dx: float        # size of pixels along x-axis
+    dy: float        # size of pixels along y-axis
+
+
+@dc.dataclass
+class Record:
+    data: list[DropletData]  # think as if taking snapshots
+    init_guess: np.ndarray
+
+
+eps = 1e-2  # cut off value to decide one phase
 
 
 def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int):
@@ -120,21 +145,21 @@ def plot_energy(ax: plt.Axes, many_data: list[DropletData]):
 
 def plot_PSD(ax: plt.Axes):
     # TODO: change to sample the PSD from the height profile of a rough surface
-    L = 10  # spatial dimension
-    qL = 2*np.pi / L
+    L = 10           # spatial dimension
+    n_grid = 200     # samples in spatial domain
+    region = Region(L, L, n_grid, n_grid)
+
     qR = 2e0  # roll-off
     qS = 2e1  # cut-off
     C0 = 1e7  # prefactor
     H = 0.95  # Hurst exponent
-    n_spectrum = 100  # samples in spectral domain
-    q_iso, C_iso = generate_isotropic_psd(C0, qL, qR, qS, H, n_spectrum)
-    ax.loglog(q_iso, np.absolute(C_iso))
+    roughness = SelfAffineRoughness(C0, qR, qS, H)
 
-    n_grid = 200
-    dx = L / n_grid
-    qx = 2*np.pi * np.fft.fftfreq(n_grid, dx)
-    ax.axvline(abs(qx[qx.nonzero()]).min(), color="r", linestyle="--")
-    ax.axvline(qx.max(), color="r", linestyle="--")
+    # isotropic PSD
+    q_iso = region.qx
+    ax.loglog(fft.fftshift(q_iso), fft.fftshift(roughness.mapto_psd(q_iso)))
+    ax.axvline(abs(q_iso[q_iso.nonzero()]).min(), color="r", linestyle="--")
+    ax.axvline(q_iso.max(), color="r", linestyle="--")
 
     ax.grid()
 
