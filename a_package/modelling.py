@@ -63,12 +63,18 @@ def PSD_to_height(C: np.ndarray):
     return fft.ifftn(h_norm * phase_angle).real
 
 
+@dc.dataclass
 class CapillaryBridge:
     """
     Field is interpolated by triangular linear finite elements as: `a + b*xi + c*eta`, with `a` located at the centroid.
     Gradient values are computed accordingly as: `(b / dx, c / dy)`
     Integral of double well potential is evaluated via Gaussian Quadrature-2 point scheme
     """
+    region: Region
+    eta: float
+    h1: np.ndarray
+    h2: np.ndarray
+    phi: np.ndarray
 
     def __init__(self, region: Region, eta: float, h1: np.ndarray, h2: np.ndarray, phi: np.ndarray):
         self.region = region
@@ -127,10 +133,11 @@ class CapillaryBridge:
         poly_deg = 4  # max degree of polymers
         self.phi_power = np.empty((poly_deg, num_triangle * MN))
         """the values of `phi` and its power terms
-            index  0 -- phi, set with `update_phase_field`
-            index  1 -- phi^2, update with `compute_energy`, `compute_energy_jacobian`
-            index  2 -- phi^3, update with `compute_energy`, `compute_energy_jacobian`
-            index  3 -- phi^4, update with `compute_energy`
+    
+            index  0 -- phi, set with `update_phase_field`;
+            index  1 -- phi^2, update with `compute_energy`, `compute_energy_jacobian`;
+            index  2 -- phi^3, update with `compute_energy`, `compute_energy_jacobian`;
+            index  3 -- phi^4, update with `compute_energy`.
         """
         self.phi_dx = np.empty((num_triangle * MN))
         self.phi_dy = np.empty((num_triangle * MN))

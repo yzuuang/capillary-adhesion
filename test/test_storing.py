@@ -1,8 +1,12 @@
+"""
+Tests of the `storing.py` file.
+"""
+
 import dataclasses as dc
 import numpy as np
 import numpy.random as random
 
-from a_package.data_store import *
+from a_package.storing import save, load
 
 
 _rng = random.default_rng()

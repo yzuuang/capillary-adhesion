@@ -1,16 +1,15 @@
 """
 Store data in a self-describing manner.
-
-So far, flat number, string, numeric array, nested dataclass, list of nested dataclass are being considered.
 """
 
 import contextlib
 import dataclasses as dc
 import json
-import numpy as np
 import os
 import shutil
 import typing
+
+import numpy as np
 
 
 @contextlib.contextmanager
@@ -40,7 +39,6 @@ _JSON_indent = 2
 
 
 def _save_here(label: str, data: dict):
-
     for key, value in data.items():
         # save array into CSV and keep filename
         if isinstance(value, np.ndarray):
@@ -66,7 +64,6 @@ def _save_here(label: str, data: dict):
 
 
 def _load_here(label: str):
-
     # load JSON, label as filename
     with open(f"{label}.json", mode="r", encoding=_UTF_8) as file:
         data: dict = json.load(file)
@@ -91,18 +88,20 @@ _archive_format = "tar"  # uncompressed
 
 
 def save(path, label: str, data):
-
     if dc.is_dataclass(data):
         data = dc.asdict(data)
 
     folder = os.path.join(path, label)
     with working_directory(folder, new=True):
         _save_here(label, data)
-        shutil.make_archive(folder, _archive_format)
 
 
-def load(path, label: str, DataType = None):
+def pack(path):
+    with working_directory(path, new=False):
+        shutil.make_archive(path, _archive_format)
 
+
+def load(path, label: str, DataType=None):
     folder = os.path.join(path, label)
     with working_directory(folder, new=True):
         shutil.unpack_archive(f"{folder}.{_archive_format}")
@@ -118,7 +117,6 @@ def load(path, label: str, DataType = None):
 
 
 def _recover_dataclass(data: dict, DataType):
-
     # check and construct the nested dataclass instances
     for field in dc.fields(DataType):
         # nested dataclass (recursive)
