@@ -141,12 +141,14 @@ class CapillaryBridge:
         """
         self.phi_dx = np.empty((num_triangle * MN))
         self.phi_dy = np.empty((num_triangle * MN))
+        self._update_phase_field(self.phi)
 
         num_quadrature = 1  # number of quadrature points per triangle
         self.weight = np.ones((1, num_triangle * num_quadrature * MN), dtype=float)
         self.triangle_area = 0.5 * region.dx * region.dy
 
-    def update_phase_field(self, phi_flat) -> None:
+    def _update_phase_field(self, phi_flat) -> None:
+        """Update the memory to use for computation but not the phase-field attribute."""
         self.phi_power[0] = self.K_centroid @ phi_flat
         self.phi_dx[:] = self.Dx @ phi_flat
         self.phi_dy[:] = self.Dy @ phi_flat
@@ -213,19 +215,19 @@ class CapillaryBridge:
 
     def formulate_with_constant_volume(self, volume: float):
         def f(x: np.ndarray):
-            self.update_phase_field(x)
+            self._update_phase_field(x)
             return self.compute_energy()
 
         def f_grad(x: np.ndarray):
-            self.update_phase_field(x)
+            self._update_phase_field(x)
             return self.compute_energy_jacobian()
 
         def g(x: np.ndarray):
-            self.update_phase_field(x)
+            self._update_phase_field(x)
             return self.compute_volume() - volume
 
         def g_grad(x: np.ndarray):
-            self.update_phase_field(x)
+            self._update_phase_field(x)
             return self.compute_volume_jacobian()
 
         return NumOptEq(f, f_grad, g, g_grad)
