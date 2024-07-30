@@ -48,7 +48,7 @@ def assert_equal(loaded, saved):
             assert np.all(loaded_value == saved_value), f"The loaded {field.name} data is not the same as the saved."
 
 
-_path = __file__.replace(".py", "_path_root")
+_path = __file__.replace(".py", ".data")
 _group = "some group"
 _common_label = "some dataset"
 

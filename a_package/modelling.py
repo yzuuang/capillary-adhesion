@@ -123,8 +123,10 @@ class CapillaryBridge:
         self.eta = eta
 
         self.h1_origin = h1
-        self.h2_origin = h2
         self.h1 = h1
+        self.m1 = (0, 0)
+        self.z1 = 0.
+
         self.h2 = h2
 
         num_triangle = 2  # numer of triangles per pixel
@@ -191,11 +193,16 @@ class CapillaryBridge:
             extreme = np.nanmax(outlier)
             print(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
 
-    def update_displacement(self, m1: tuple[int, int], z1: float):
-        # NOTE: 1 refers to the rigid body at top, 2 refers to the one at base
-        # slide of the top
-        self.h1 = np.roll(self.h1_origin, m1)  # due to periodic boundary
-        g_grid = self._h1 - self._h2 + z1
+    def update_displacement(self, *, m1: tuple[int, int]=None, z1: float=None):
+        # NOTE: 1 refers to the rigid body at top
+        # displacement of the top
+        if m1:
+            self.m1 = m1
+            self.h1 = np.roll(self.h1_origin, m1)  # due to periodic boundary
+        if z1:
+            self.z1 = z1
+        # update the gap
+        g_grid = self._h1 - self._h2 + self.z1
         # check contact
         at_contact = g_grid < 0
         # set the phase-field and gap values at contact to 0
@@ -214,19 +221,27 @@ class CapillaryBridge:
         perimeter = self.eta * (self.phi_dx ** 2 + self.phi_dy ** 2)
         return ((double_well + perimeter) * self.g_triangle).sum() * self.triangle_area
 
-    def compute_force(self) -> float:
+    def compute_force(self):
         # update necessary power terms
         self.phi_power[1] = self.phi_power[0] ** 2
         self.phi_power[2] = self.phi_power[0] * self.phi_power[1]
         self.phi_power[3] = self.phi_power[1] ** 2
+
+        # the same part in 3 components
         # compute values at grid points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
         double_well = (1 / self.eta) * (self.phi_power[1] - 2 * self.phi_power[2] + self.phi_power[3])
         perimeter = self.eta * (self.phi_dx ** 2 + self.phi_dy ** 2)
-        dE_dg = -(double_well + perimeter).sum() * self.triangle_area
-        # now the differences in three components
+        de_dg = (double_well + perimeter)
+
+        # the different part in 3 components
         dg_dx = self.Dx @ self._h1 - self.Dx @ self._h2
+        f_x = (de_dg * dg_dx).sum()
         dg_dy = self.Dy @ self._h1 - self.Dy @ self._h2
-        dg_dz = 1
+        f_y = (de_dg * dg_dy).sum()
+        f_z = de_dg.sum()
+
+        return np.array([f_x, f_y, f_z]) * self.triangle_area
+
 
     def compute_energy_jacobian(self) -> np.ndarray:
         # update necessary power terms

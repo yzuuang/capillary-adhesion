@@ -28,7 +28,7 @@ def test_capillary_bridge_compute_energy_jacobian():
     phi[(xm/L)**2 + (ym/L)**2 >= 0.5] = 0.0
 
     capi = CapillaryBridge(region, eta, h1, h2, phi)
-    capi.update_displacement(eta * 2)
+    capi.update_displacement(m1=(1, 2), z1=eta*3)
 
     # all the step lengths to be used for finite difference computation
     lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))  # machine precision determined

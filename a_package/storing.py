@@ -88,7 +88,11 @@ class FilesToReadWrite(FilesToRead):
         shutil.make_archive(target_path, _archive_format)
 
     def brand_new(self):
-        os.system(f"rm -rf {self._path_root}/*")
+        for entry in os.scandir(self._path_root):
+            if entry.is_dir():
+                shutil.rmtree(entry.path)
+            else:  # file or link
+                os.remove(entry.path)
 
 
 def _save_here(label: str, data: dict):

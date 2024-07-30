@@ -14,8 +14,8 @@ from a_package.storing import FilesToReadWrite
 
 @dc.dataclass
 class SimulationStep:
+    m: tuple[int, int]
     d: float
-    V: float
     phi: np.ndarray
     t_exec: float
 
@@ -32,10 +32,11 @@ def post_process(res: SimulationResult):
     num_steps = len(res.steps)
     t = np.empty(num_steps)
     phi = []
-    d = np.empty(num_steps)
+    m = []
+    z = np.empty(num_steps)
     V = np.empty(num_steps)
     E = np.empty(num_steps)
-    F = np.empty(num_steps)
+    F = np.empty((num_steps, 3))
 
     # model for computing extra quantities
     capi = res.modelling
@@ -44,16 +45,17 @@ def post_process(res: SimulationResult):
     for i, step in enumerate(res.steps):
         t[i] = step.t_exec
         phi.append(step.phi)
-        d[i] = step.d
+        m.append(step.m)
+        z[i] = step.d
 
         capi.phi = step.phi
-        capi.update_separation(d[i])
+        capi.update_displacement(m1=m[i], z1=z[i])
         V[i] = capi.compute_volume()
         E[i] = capi.compute_energy()
         F[i] = capi.compute_force()
 
     # pack in an object
-    evo = Evolution(t, phi, d, V, E, F)
+    evo = Evolution(t, phi, m, z, V, E, F)
     return ProcessedResult(res.modelling, res.solving, evo)
 
 
@@ -61,7 +63,8 @@ def post_process(res: SimulationResult):
 class Evolution:
     t_exec: np.ndarray
     phi: list[np.ndarray]
-    d: np.ndarray
+    m1: list[tuple[int, int]]
+    z1: np.ndarray
     V: np.ndarray
     E: np.ndarray
     F: np.ndarray
@@ -97,18 +100,54 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
         # update the parameter
         print(f""
               f"Parameter of interest: mean distance={d}")
-        capi.update_separation(d)
+        capi.update_displacement(d)
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
         x, t_exec = solver.solve_minimisation(numopt, x)
 
         # save the result
-        data = SimulationStep(d, V, capi.phi, t_exec)
+        data = SimulationStep([0,0], d, capi.phi, t_exec)
         store.save("Simulation", f"steps---{index}", data)
         sim.steps.append(f"steps---{index}.json")
 
     store.save("Simulation", "result", sim)
+
+    # reload to get all data in memory and post-process
+    sim = store.load("Simulation", "result", SimulationResult)
+    p_sim = post_process(sim)
+    store.save("Processed", "result", p_sim)
+
+
+def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
+                                V: float, slide_by_indices: list[tuple[int, int]]):
+    # # save the configurations
+    # store.save("Simulation", "modelling", capi)
+    # store.save("Simulation", "solving", solver)
+    # sim = SimulationResult("modelling.json", "solving.json", [])
+    #
+    # # inform
+    # print(f"Problem size: {capi.region.nx}x{capi.region.ny}. "
+    #       f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}")
+    #
+    # # simulate
+    # x = capi.phi.ravel()
+    # for index, m in enumerate(slide_by_indices):
+    #     # update the parameter
+    #     print(f""
+    #           f"Parameter of interest: slide by indices={m}")
+    #     capi.update_displacement(m1=m)
+    #
+    #     # solve the problem
+    #     numopt = capi.formulate_with_constant_volume(V)
+    #     x, t_exec = solver.solve_minimisation(numopt, x)
+    #
+    #     # save the result
+    #     data = SimulationStep(m, 0., capi.phi, t_exec)
+    #     store.save("Simulation", f"steps---{index}", data)
+    #     sim.steps.append(f"steps---{index}.json")
+    #
+    # store.save("Simulation", "result", sim)
 
     # reload to get all data in memory and post-process
     sim = store.load("Simulation", "result", SimulationResult)
