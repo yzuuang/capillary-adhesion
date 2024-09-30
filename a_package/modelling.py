@@ -53,12 +53,12 @@ class SelfAffineRoughness:
         return C
 
 
-def PSD_to_height(C: np.ndarray):
+def PSD_to_height(C: np.ndarray, seed=None):
     # <h^2> corresponding to PSD, thus, take the square-root
     h_norm = np.sqrt(C)
 
     # impose some random phase angle
-    rng = random.default_rng()
+    rng = random.default_rng(seed)
     phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, C.shape))
 
     return fft.ifftn(h_norm * phase_angle).real
@@ -66,19 +66,236 @@ def PSD_to_height(C: np.ndarray):
 
 @dc.dataclass
 class CapillaryBridge:
-    """
-    Field is interpolated by triangular linear finite elements as: `a + b*xi + c*eta`, with `a` located at the centroid.
-    Gradient values are computed accordingly as: `(b / dx, c / dy)`
-    Integral of double well potential is evaluated via Gaussian Quadrature-2 point scheme
+    """All necessary parameters for visualizing a capillary bridge.
+
+    Data attributes: field is stored with nodal values as 2D array.
+    1 refer to the solid top; 2 refer to the solid base.
     """
     region: Region
     eta: float
     h1: np.ndarray
     h2: np.ndarray
-    phi: np.ndarray
+    ix1_iy1: tuple[int, int] = None
+    z1: float = 0.
+    g: np.ndarray = None
+    no_gap: np.ndarray = None
+    phi: np.ndarray = None
 
-    def __init__(self, region: Region, eta: float, h1: np.ndarray, h2: np.ndarray, phi: np.ndarray):
-        self.region = region
+    def __post_init__(self):
+        if self.ix1_iy1 is None:
+            self.ix1_iy1 = [0, 0]
+        self.h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
+        self.inner = ComputeCapillary(self)
+
+    def update_gap(self):
+        # Lateral displacement of the solid top
+        # NOTE: assume periodic boundary
+        self.h1 = np.roll(self.h1_origin, self.ix1_iy1, axis=(0,1))
+        # Gap
+        self.g = self.h1 + self.z1 - self.h2
+
+        # Check where the top and the base collide
+        self.no_gap = self.g < 0
+        # NOTE: assume interpenetration
+        self.g[self.no_gap] = 0
+
+        # Call the inner class method
+        self.inner.update_gap(self.g.ravel())
+
+    def update_phase_field(self):
+        # Clean the phase-field where the solid bodies contact
+        self.phi[self.no_gap] = 0
+
+        # Call the inner class method
+        self.inner.update_phase_field(self.phi.ravel())
+
+    @property
+    def displacement(self):
+        return np.array([
+            self.ix1_iy1[0] * self.region.dx,
+            self.ix1_iy1[1] * self.region.dy,
+            self.z1
+        ])
+
+    @property
+    def volume(self):
+        return self.inner.compute_volume()
+
+    @property
+    def energy(self):
+        return self.inner.compute_energy()
+
+    @property
+    def force(self):
+        return self.inner.compute_force()
+
+    def formulate_with_constant_volume(self, volume: float):
+        def objective(x: np.ndarray):
+            self.inner.update_phase_field(x)
+            return self.inner.compute_energy()
+
+        def objective_jacobian(x: np.ndarray):
+            self.inner.update_phase_field(x)
+            return self.inner.compute_energy_jacobian()
+
+        def constraint(x: np.ndarray):
+            self.inner.update_phase_field(x)
+            return self.inner.compute_volume() - volume
+
+        def constraint_jacobian(x: np.ndarray):
+            self.inner.update_phase_field(x)
+            return self.inner.compute_volume_jacobian()
+
+        return NumOptEq(objective, objective_jacobian, constraint, constraint_jacobian)
+
+    def validate_phase_field(self):
+
+        # phase field < 0
+        if np.any(self.phi < 0):
+            outlier = np.where(self.phi < 0, self.phi, np.nan)
+            count = np.count_nonzero(~np.isnan(outlier))
+            extreme = np.nanmin(outlier)
+            print(f"Notice: phase field has {count} values < 0, min at {extreme:.2e}")
+
+        # phase field > 1
+        if np.any(self.phi > 1):
+            outlier = np.where(self.phi > 1, self.phi, np.nan)
+            count = np.count_nonzero(~np.isnan(outlier))
+            extreme = np.nanmax(outlier)
+            print(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
+
+
+class ComputeCapillary:
+    """Inner class
+    
+    Data attributes: field is stored with values of elements as 1D array (fast computation).
+
+    Methods: most are computation that will be used for optimization. 
+    Integral of double well potential is evaluated via a centroid rule of Quadrature for triangles.
+    """
+
+    def __init__(self, capi: CapillaryBridge):
+        # The grid
+        region = capi.region
+        # Number of pixels
+        n_pixel = region.nx * region.ny
+        # 2 triangle elements per pixel
+        n_element = 2 * n_pixel
+        # Area of one element
+        self.element_area = 0.5 * region.dx * region.dy
+        # FE interpolation
+        self.map = FirstOrderElement(region)
+
+        # Copy simple parameters
+        self.eta = capi.eta
+
+        # The gap between two solid bodies
+        self.g = np.empty((n_element))
+        self.dg_dx = np.empty((n_element))
+        self.dg_dy = np.empty((n_element))
+
+        # Highest polynomial degree for computation
+        poly_degr = 4
+        # The phase-field and its powers; each stored as a column of a 2D array. 
+        self.phi_powers = np.empty((poly_degr, n_element))
+        """    
+            Index  0 -- phi, set with 'update_phase_field';
+            Index  1 -- phi^2, update with 'compute_energy', 'compute_energy_jacobian';
+            Index  2 -- phi^3, update with 'compute_energy', 'compute_energy_jacobian';
+            Index  3 -- phi^4, update with 'compute_energy'.
+        """
+        # The gradient of phase-field
+        self.dphi_dx = np.empty((n_element))
+        self.dphi_dy = np.empty((n_element))
+
+        # Number of quadrature points per triangle element
+        # n_quadrature = 1
+        # NOTE: Though 1 quadrature point at the centroid can only approximates an integral of
+        # a 4th oder polynomial, it seems sufficient to yield a solution in numerical experiments. 
+        # weight = np.ones((1, n_quadrature * n_elem), dtype=float)
+
+    def update_gap(self, g: np.ndarray):
+        """
+        g --- nodal value, flat.
+        """
+        self.g = self.map.K_centroid @ g
+        self.dg_dx = self.map.Dx @ g
+        self.dg_dy = self.map.Dy @ g
+        # dg_dz = 1
+
+    def update_phase_field(self, phi: np.ndarray):
+        """
+        phi --- nodal value, flat.
+        """
+        self.phi_powers[0] = self.map.K_centroid @ phi
+        self.dphi_dx = self.map.Dx @ phi
+        self.dphi_dy = self.map.Dy @ phi
+
+    def compute_energy(self) -> float:
+        # update necessary power terms
+        self.phi_powers[1] = self.phi_powers[0] ** 2
+        self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
+        self.phi_powers[3] = self.phi_powers[1] ** 2
+        # compute at quadrature points: (1/eta) (phi^2 - 2 phi^3 + phi^4)
+        double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
+        # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
+        perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
+        return ((double_well + perimeter) * self.g).sum() * self.element_area
+
+    def compute_force(self):
+        # update necessary power terms
+        self.phi_powers[1] = self.phi_powers[0] ** 2
+        self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
+        self.phi_powers[3] = self.phi_powers[1] ** 2
+
+        # the common part of 3 components
+        # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
+        perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
+        # compute at quadrature points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
+        double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
+        de_dg = (double_well + perimeter)
+
+        # the different part of 3 components
+        f_x = (de_dg * self.dg_dx).sum()
+        f_y = (de_dg * self.dg_dy).sum()
+        # dg_dz = 1
+        f_z = de_dg.sum()
+
+        return np.array([f_x, f_y, f_z]) * self.element_area
+
+    def compute_energy_jacobian(self) -> np.ndarray:
+        # update necessary power terms
+        self.phi_powers[1] = self.phi_powers[0] ** 2
+        self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
+        # constant within the element: 2 eta g (Dx phi Dx + Dy phi Dy)
+        perimeter_jacobian = (2 * self.eta) * ((self.g * self.dphi_dx) @ self.map.Dx + 
+                                               (self.g * self.dphi_dy) @ self.map.Dy)
+        # compute at quadrature points: (2/eta) g (phi - 3 phi^2 + phi^3)
+        double_well_jacobian = (2 / self.eta) * ((self.phi_powers[0] - 3 * self.phi_powers[1] +
+                                                  2 * self.phi_powers[2]) * self.g) @ self.map.K_centroid
+
+        jacobian = (double_well_jacobian + perimeter_jacobian) * self.element_area
+        return jacobian
+
+    def compute_volume(self) -> float:
+        return (self.g * self.phi_powers[0]).sum() * self.element_area
+
+    def compute_volume_jacobian(self) -> np.ndarray:
+        return (self.g @ self.map.K_centroid) * self.element_area
+
+
+class FirstOrderElement:
+    """
+    Create matrices that maps a vector of nodal values into a vector of values of interest in finite elements. 
+
+    Field is interpolated by triangular linear finite elements: 'a + b*xi + c*eta', with 'a' located at the 
+    centroid. Gradient values are thus constant: '(b / dx, c / dy)'.
+    """
+    K_centroid: np.ndarray
+    Dx: np.ndarray
+    Dy: np.ndarray
+
+    def __init__(self, region: Region):
         M = region.nx
         N = region.ny
         MN = M * N
@@ -106,7 +323,7 @@ class CapillaryBridge:
         fill_cyclic_diagonal_2d(K_b_upper, (1, 1), (M, N), 1)
 
         self.Dx = sparse.vstack([K_b_lower, K_b_upper], format="csr") / region.dx
-        self.Dx_t = sparse.csr_matrix(self.Dx.T)
+        # self.Dx_t = sparse.csr_matrix(self.Dx.T)
 
         # K_c maps \phi grid points to the difference in y direction
         K_c_lower = sparse.lil_matrix((MN, MN), dtype=float)
@@ -118,170 +335,7 @@ class CapillaryBridge:
         fill_cyclic_diagonal_2d(K_c_upper, (1, 1), (M, N), 1)
 
         self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / region.dy
-        self.Dy_t = sparse.csr_matrix(self.Dy.T)
-
-        self.eta = eta
-
-        self.h1_origin = h1
-        self.h1 = h1
-        self.m1 = (0, 0)
-        self.z1 = 0.
-
-        self.h2 = h2
-
-        num_triangle = 2  # numer of triangles per pixel
-
-        self.g_triangle = np.empty((num_triangle * MN))  # average of a triangle
-
-        poly_deg = 4  # max degree of polymers
-        self.phi_power = np.empty((poly_deg, num_triangle * MN))
-        """the values of `phi` and its power terms
-    
-            index  0 -- phi, set with `update_phase_field`;
-            index  1 -- phi^2, update with `compute_energy`, `compute_energy_jacobian`;
-            index  2 -- phi^3, update with `compute_energy`, `compute_energy_jacobian`;
-            index  3 -- phi^4, update with `compute_energy`.
-        """
-        self.phi_dx = np.empty((num_triangle * MN))
-        self.phi_dy = np.empty((num_triangle * MN))
-        self.phi = phi
-
-        num_quadrature = 1  # number of quadrature points per triangle
-        self.weight = np.ones((1, num_triangle * num_quadrature * MN), dtype=float)
-        self.triangle_area = 0.5 * region.dx * region.dy
-
-    @property
-    def h1(self):
-        return np.reshape(self._h1, (self.region.nx, self.region.ny))
-
-    @h1.setter
-    def h1(self, h1: np.ndarray):
-        self._h1 = h1.ravel()
-
-    @property
-    def h2(self):
-        return np.reshape(self._h2, (self.region.nx, self.region.ny))
-
-    @h2.setter
-    def h2(self, h2: np.ndarray):
-        self._h2 = h2.ravel()
-
-    @property
-    def phi(self):
-        return np.reshape(self._phi, (self.region.nx, self.region.ny))
-
-    @phi.setter
-    def phi(self, phi: np.ndarray):
-        self._phi = phi.ravel()
-        # update memory for calculation
-        self.phi_power[0] = self.K_centroid @ self._phi
-        self.phi_dx = self.Dx @ self._phi
-        self.phi_dy = self.Dy @ self._phi
-
-    def validate_phase_field(self):
-        # phase field < 0
-        if np.any(self.phi < 0):
-            outlier = np.where(self.phi < 0, self.phi, np.nan)
-            count = np.count_nonzero(~np.isnan(outlier))
-            extreme = np.nanmin(outlier)
-            print(f"Notice: phase field has {count} values < 0, min at {extreme:.2e}")
-
-        # phase field > 1
-        if np.any(self.phi > 1):
-            outlier = np.where(self.phi > 1, self.phi, np.nan)
-            count = np.count_nonzero(~np.isnan(outlier))
-            extreme = np.nanmax(outlier)
-            print(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
-
-    def update_displacement(self, *, m1: tuple[int, int]=None, z1: float=None):
-        # NOTE: 1 refers to the rigid body at top
-        # displacement of the top
-        if m1:
-            self.m1 = m1
-            self.h1 = np.roll(self.h1_origin, m1)  # due to periodic boundary
-        if z1:
-            self.z1 = z1
-        # update the gap
-        g_grid = self._h1 - self._h2 + self.z1
-        # check contact
-        at_contact = g_grid < 0
-        # set the phase-field and gap values at contact to 0
-        self._phi[at_contact] = 0
-        g_grid[at_contact] = 0
-        # update memory for calculation
-        self.g_triangle = self.K_centroid @ g_grid  # triangular average
-
-    def compute_energy(self) -> float:
-        # update necessary power terms
-        self.phi_power[1] = self.phi_power[0] ** 2
-        self.phi_power[2] = self.phi_power[0] * self.phi_power[1]
-        self.phi_power[3] = self.phi_power[1] ** 2
-        # compute values at grid points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
-        double_well = (1 / self.eta) * (self.phi_power[1] - 2 * self.phi_power[2] + self.phi_power[3])
-        perimeter = self.eta * (self.phi_dx ** 2 + self.phi_dy ** 2)
-        return ((double_well + perimeter) * self.g_triangle).sum() * self.triangle_area
-
-    def compute_force(self):
-        # update necessary power terms
-        self.phi_power[1] = self.phi_power[0] ** 2
-        self.phi_power[2] = self.phi_power[0] * self.phi_power[1]
-        self.phi_power[3] = self.phi_power[1] ** 2
-
-        # the same part in 3 components
-        # compute values at grid points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
-        double_well = (1 / self.eta) * (self.phi_power[1] - 2 * self.phi_power[2] + self.phi_power[3])
-        perimeter = self.eta * (self.phi_dx ** 2 + self.phi_dy ** 2)
-        de_dg = (double_well + perimeter)
-
-        # the different part in 3 components
-        dg_dx = self.Dx @ self._h1 - self.Dx @ self._h2
-        f_x = (de_dg * dg_dx).sum()
-        dg_dy = self.Dy @ self._h1 - self.Dy @ self._h2
-        f_y = (de_dg * dg_dy).sum()
-        f_z = de_dg.sum()
-
-        return np.array([f_x, f_y, f_z]) * self.triangle_area
-
-
-    def compute_energy_jacobian(self) -> np.ndarray:
-        # update necessary power terms
-        self.phi_power[1] = self.phi_power[0] ** 2
-        self.phi_power[2] = self.phi_power[0] * self.phi_power[1]
-        # compute values at grid points: (2/eta)(phi - 3 phi^2 + phi^3)
-        double_well_jacobian = (2 / self.eta) * ((self.phi_power[0] - 3 * self.phi_power[1] + 2 * self.phi_power[2])
-                                                 * self.g_triangle) @ self.K_centroid
-        perimeter_jacobian = (2 * self.eta) * (self.Dx_t @ (self.g_triangle * self.phi_dx)
-                                               + self.Dy_t @ (self.g_triangle * self.phi_dy))
-        jacob = (double_well_jacobian + perimeter_jacobian) * self.triangle_area
-        return jacob
-
-    def compute_volume(self) -> float:
-        return (self.g_triangle * self.phi_power[0]).sum() * self.triangle_area
-
-    def compute_volume_jacobian(self) -> np.ndarray:
-        return (self.g_triangle @ self.K_centroid) * self.triangle_area
-
-    def formulate_with_constant_volume(self, volume: float):
-        def f(x: np.ndarray):
-            self.phi = x
-            return self.compute_energy()
-
-        def f_grad(x: np.ndarray):
-            self.phi = x
-            return self.compute_energy_jacobian()
-
-        def g(x: np.ndarray):
-            self.phi = x
-            return self.compute_volume() - volume
-
-        def g_grad(x: np.ndarray):
-            self.phi = x
-            return self.compute_volume_jacobian()
-
-        return NumOptEq(f, f_grad, g, g_grad)
-
-    def formulate_with_constant_chemical_potential(self, chemical_potential: float):
-        raise NotImplementedError()
+        # self.Dy_t = sparse.csr_matrix(self.Dy.T)
 
 
 def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
@@ -294,7 +348,7 @@ def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
 
 
 def fill_cyclic_diagonal_2d(mat: sparse.spmatrix, j: tuple[int, int], N: tuple[int, int], val: float):
-    """fill cyclically, element-wise in the j-th diagonal of a matrix.
+    """Fill cyclically, element-wise in the j-th diagonal of a matrix.
     The matrix represents a mapping from 2D data to 2D data.
     However, the 2d array is ravelled into 1D array for efficiency.
     """

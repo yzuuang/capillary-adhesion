@@ -1,23 +1,24 @@
 import numpy.random as random
 
 from a_package.modelling import Region, wavevector_norm, SelfAffineRoughness, PSD_to_height, CapillaryBridge
-from a_package.routine import simulate_quasi_static_pull_push
+from a_package.routine import simulate_quasi_static_pull_push, simulate_quasi_static_slide
 from a_package.solving import AugmentedLagrangian
 from a_package.storing import working_directory
+from a_package.visualizing import *
 
 
 if __name__ == "__main__":
     # modelling parameters
-    eta = 0.05            # interface width
-    N = 200              # num of nodes along one axis
-    L = N * eta           # lateral size
-    V = L**2 * (2 * eta)  # volume of the droplet
+    eta = 0.05      # interface width
+    N = 256         # num of nodes along one axis
+    L = N * eta     # lateral size
+    V = L**2 * eta  # volume of the droplet
 
     # the region where simulation runs
     region = Region(L, L, N, N)
 
     # generate rough plates
-    C0 = 1e8  # prefactor
+    C0 = 1e7  # prefactor
     qR = 2e0  # roll-off
     qS = 2e1  # cut-off
     H = 0.95  # Hurst exponent
@@ -32,19 +33,34 @@ if __name__ == "__main__":
     phi = rng.random((N, N))
 
     # combine into the model object
-    capi = CapillaryBridge(region, eta, h1, h2, phi)
+    capi = CapillaryBridge(region, eta, h1, h2, z1=2*eta, phi=phi)
+    capi.update_gap()
+    capi.update_phase_field()
+
+    # A plot to check
+    data = DropletData(region, eta, h1, h2, capi.displacement, capi.g, capi.phi, capi.force)
+    fig, ax = plt.subplots()
+    # im = plot_height_topography(ax, data)
+    im = plot_gap_topography(ax, data)
+    plot_contact_topography(ax, data)
+    fig.colorbar(im)
+    plt.show()
+
+    skip = input("Run simulation [Y/n]? ").upper() == "N"
+    if skip:
+        quit()
 
     # solving parameters
     k_max = 2000
     e_conv = 1e-8
     e_volume = 1e-6
-    c_init = 1e-2
+    c_init = 1e-1
     c_upper = 1e3
     beta = 3.0
     solver = AugmentedLagrangian(k_max, e_conv, e_volume, c_init, c_upper, beta)
 
     # run simulation routine
-    d_min = 4 * eta
+    d_min = 2 * eta
     d_max = 5 * eta
     d_step = 0.2 * eta
     path = __file__.replace(".py", ".data")
