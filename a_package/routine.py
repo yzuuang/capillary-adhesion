@@ -16,8 +16,9 @@ from a_package.storing import FilesToReadWrite
 class SimulationStep:
     m: tuple[int, int]
     d: float
-    phi: np.ndarray
     t_exec: float
+    phi: np.ndarray
+    lam: np.ndarray
 
 
 @dc.dataclass
@@ -36,6 +37,9 @@ def post_process(res: SimulationResult):
     phi = []
     r = np.empty((n_step, n_dimension))
     F = np.empty((n_step, n_dimension))
+    E = np.empty((n_step))
+    p = np.empty((n_step))
+    V = np.empty((n_step))
 
     # use the model for computing extra quantities
     capi = res.modelling
@@ -56,8 +60,12 @@ def post_process(res: SimulationResult):
         r[i] = capi.displacement
         F[i] = capi.force
 
+        E[i] = capi.energy
+        p[i] = step.lam
+        V[i] = capi.volume
+
     # pack in an object
-    evo = Evolution(t, g, phi, r, F)
+    evo = Evolution(t, g, phi, r, F, E, p, V)
     return ProcessedResult(res.modelling, res.solving, evo)
 
 
@@ -68,6 +76,9 @@ class Evolution:
     phi: list[np.ndarray]
     r: np.ndarray
     F: np.ndarray
+    E: np.ndarray
+    p: np.ndarray
+    V: np.ndarray
 
 
 @dc.dataclass
@@ -90,6 +101,11 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
     d_approaching = d_max - d_step * np.arange(num_d)
     all_d = np.concatenate((d_departing, d_approaching))
 
+    # Truncate to remove floating point errors
+    # NOTE: assume 'd_step' < 0
+    n_decimals = 6
+    all_d = np.round(all_d, n_decimals)
+
     # inform
     print(f"Problem size: {capi.region.nx}x{capi.region.ny}. "
           f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}")
@@ -106,13 +122,16 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        x, t_exec = solver.solve_minimisation(numopt, x)
+        x, t_exec, lam = solver.solve_minimisation(numopt, x)
 
-        # save the resultfl
+        # save the results
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
-        data = SimulationStep([0,0], d, capi.phi, t_exec)
+        data = SimulationStep([0,0], d, t_exec, capi.phi, lam)
         store.save("Simulation", f"steps---{index}", data)
         sim.steps.append(f"steps---{index}.json")
+
+        # Check the bounds on phase field
+        capi.validate_phase_field()
 
     # Save simulation results
     store.save("Simulation", "result", sim)
@@ -146,12 +165,16 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        x, t_exec = solver.solve_minimisation(numopt, x)
+        x, t_exec, lam = solver.solve_minimisation(numopt, x)
 
         # save the result
-        data = SimulationStep(m, capi.z1, capi.phi, t_exec)
+        capi.phi = x.reshape(capi.region.nx, capi.region.ny)
+        data = SimulationStep(m, capi.z1, t_exec, capi.phi, lam)
         store.save("Simulation", f"steps---{index}", data)
         sim.steps.append(f"steps---{index}.json")
+
+        # Check the bounds on phase field
+        capi.validate_phase_field()
 
     # Save simulation results
     store.save("Simulation", "result", sim)
