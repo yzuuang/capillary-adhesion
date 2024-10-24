@@ -59,6 +59,11 @@ class AugmentedLagrangian:
         lam = 0
         t_exec = 0
 
+        # inform
+        tabel_header = ['Iter', 'T_exec', 'Objective', 'lambda\t', 'Lagrangian', 'c\t', 'Augm. Lagr.',
+                        'INFO']
+        print(*tabel_header, sep='\t')
+
         for k, c in enumerate(cc):
             # derive augmented lagrangian
             def l(x: np.ndarray):
@@ -75,6 +80,7 @@ class AugmentedLagrangian:
             [x_plus, l_plus, info] = optimize.fmin_l_bfgs_b(
                 l,
                 x_plus,  # old solution as new initial guess
+                bounds=[(0, 1)] * len(x_plus),
                 fprime=l_grad,
                 factr=1e1,  # for extremely high accuracy
                 pgtol=self.tol_convergence,
@@ -84,12 +90,18 @@ class AugmentedLagrangian:
             t_exec += t_exec_sub
 
             # inform
+            f_plus = numopt.f(x_plus)
+            error_g_x = numopt.g(x_plus)
+            lagr1 = f_plus + lam * error_g_x
+
             info['max_grad'] = max(info['grad'])
             del info['grad']
-            print(f"iter #{k} T{round(t_exec_sub)}s, lam={lam:.2e}, c={c:.2e}, {info}")
+
+            tabel_entry = [f"#{k}", f"{round(t_exec_sub, 2):.2f}s", f"{f_plus:.2e}", f"{lam:.2e}",
+                           f"{lagr1:.2e}", f"{c:.2e}", f"{l_plus:.2e}", f"{info}"]
+            print('\t'.join(tabel_entry))
 
             # convergence criteria
-            error_g_x = numopt.g(x_plus)
             if abs(error_g_x) < self.tol_constraint:
                 print(f"Notice: achieving required tolerance at iter #{k}")
                 break
@@ -103,4 +115,4 @@ class AugmentedLagrangian:
 
         print(f"Total time for inner solver: {t_exec:.1e} seconds.")
 
-        return x_plus, t_exec
+        return x_plus, t_exec, lam
