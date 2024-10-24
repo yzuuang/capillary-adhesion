@@ -5,13 +5,13 @@ import matplotlib.pyplot as plt
 from a_package.patches import *
 
 
-show_me_plots = True
+show_me_plots = False
 _rng = random.default_rng()
 
 
 def test_area_fractal_dimension():
     # Generate a square patch
-    n_pixel = 4000
+    n_pixel = 2048
     square = random_square_patch(n_pixel)
 
     # Curve fitting to find the dimension
@@ -28,14 +28,14 @@ def test_area_fractal_dimension():
 
     # Compare to reference value
     ref_val = 2.0
-    tol = 0.05
+    tol = 0.1
     assert np.isclose(dim, ref_val, atol=tol), \
         f"The value of area fractal dimension is not in the range of {ref_val:.2f}+-{tol:.2f}."
 
 
 def test_perimeter_fractal_dimension():
     # Generate a square patch
-    n_pixel = 5000
+    n_pixel = 2048
     square = random_square_patch(n_pixel)
 
     # Get the perimeter

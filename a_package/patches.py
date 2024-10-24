@@ -19,7 +19,7 @@ def _borders(n: int):
 
 def _count(blocks: list[np.ndarray]):
     """Count the number of blocks which are marked."""
-    return np.sum(np.logical_or.reduce(elem, axis=None) for elem in blocks)
+    return sum(np.logical_or.reduce(elem, axis=None) for elem in blocks)
 
 
 def box_count_dimension(mark: np.ndarray):
