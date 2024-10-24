@@ -2,28 +2,41 @@ import dataclasses as dc
 
 import numpy as np
 import numpy.fft as fft
+import numpy.linalg as la
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 from a_package.modelling import Region, SelfAffineRoughness
+from a_package.routine import ProcessedResult, post_process
+
+
+def get_capillary_state(pr: ProcessedResult, index: int):
+    return DropletData(
+        pr.modelling.region,
+        pr.modelling.eta,
+        pr.modelling.h1,
+        pr.modelling.h2,
+        pr.evolution.r[index],
+        pr.evolution.g[index],
+        pr.evolution.phi[index],
+    )
+
+
+# TODO: 'plot...' shall return the 'Artist' as the behaviour of 'matplotlib'.
+# TODO: change parameter lists into something like (data, ax, **extra_plot_args)
 
 
 @dc.dataclass
 class DropletData:
-    V: float         # volume of the droplet
+    """Somewhat flat data with all necessary values for visualizing one capillary state."""
+    region: Region
     eta: float       # interfacial width
-    L: float         # length of the plate
-    M: int           # number of pixels along x-axis
-    N: int           # number of pixels along y-axis
-    phi: np.ndarray  # phase-field in 2D-array
     h1: np.ndarray   # roughness of the 1 plate in 2D-array
     h2: np.ndarray   # roughness of the 2 plate in 2D-array
-    d: float         # displacement between the baselines of two plates
-    x: np.ndarray    # grid locations along x-axis in 1D-array
-    y: np.ndarray    # grid locations along y-axis in 1D-array
-    dx: float        # size of pixels along x-axis
-    dy: float        # size of pixels along y-axis
+    r: np.ndarray    # displacement between the baselines of two plates
+    g: np.ndarray    # gap
+    phi: np.ndarray  # phase-field in 2D-array
 
 
 @dc.dataclass
@@ -32,18 +45,18 @@ class Record:
     init_guess: np.ndarray
 
 
-eps = 1e-2  # cut off value to decide one phase
+eps = 1e-1  # cut off value to decide one phase
 
 
-def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int):
-    h1 = (data.h1[idx_row,:] + data.d) / data.eta
+def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_water=1-eps):
+    h1 = (data.h1[idx_row,:] + data.r[-1]) / data.eta
     h2 = data.h2[idx_row,:] / data.eta
-    x = data.x / data.eta
+    x = data.region.x / data.eta
 
     # add border values due to periodic boundary condition
     h1 = np.append(h1, h1[0])
     h2 = np.append(h2, h2[0])
-    x = np.append(x, data.L/data.eta)
+    x = np.append(x, data.region.lx/data.eta)
 
     # change penetration to contact
     at_contact = np.where(h1 < h2)
@@ -57,56 +70,97 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int):
     # TODO: consider when the contact line is composed of multiple curves
     ax.plot(x[at_contact], h2[at_contact], "r.")
 
-    # draw the water phase
+    # Get the water phase
     phi = data.phi[idx_row,:]
-    water_phase = np.where(phi >= 1-eps)
-    # TODO: consider when the water phase is composed of multiple sections
-    ax.fill_between(x[water_phase], h2[water_phase], h1[water_phase], color="C0")
+    water_phase = np.asarray(phi >= value_water).nonzero()[0]
+
+    # Consider when the water phase is composed of multiple sections
+    i_diff = np.diff(water_phase, prepend=water_phase[0] - 1)
+    i_break = np.hstack((i_diff > 1).nonzero())
+
+    # Draw the water phase
+    for water_drop in np.split(water_phase, i_break):
+        ax.fill_between(x[water_drop], h2[water_drop], h1[water_drop], color="C0")
 
     ax.set_xlim(x[0], x[-1])
 
 
 def plot_cross_section_phase_field(ax: plt.Axes, data: DropletData, idx_row: int):
     phi = data.phi[idx_row,:]
-    x_dimensionless = data.x / data.eta
-    ax.plot(x_dimensionless, phi)
+    x_dimensionless = data.region.x / data.eta
+    ax.plot(x_dimensionless, phi, color='C1')
+
+
+def plot_height_topography(ax: plt.Axes, data: DropletData):
+    # make value dimension less
+    h = data.h1 / data.eta
+
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+    im = ax.imshow(h, cmap="coolwarm", extent=border)
+
+    return im
+
+
+def plot_gap_topography(ax: plt.Axes, data: DropletData):
+    # nondimensionalize by 'eta'
+    g = data.g / data.eta
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+    
+    # Set a negative 'vmin' so that the map still looks blue
+    vmax = g.max()
+    vmin = -0.4 * vmax
+    im = ax.imshow(g, cmap='Blues', vmin=vmin, vmax=vmax, interpolation='nearest', extent=border)
+
+    return im
+
+
+def plot_contact_topography(ax: plt.Axes, data: DropletData):
+    # mask the non-contact part
+    contact = np.ma.masked_where(data.g > 0, data.g / data.eta)
+
+    # nondimensionalize by 'eta'
+    contact = contact / data.eta
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+
+    im = ax.imshow(contact, cmap='Blues', vmin=0, vmax=1, interpolation='nearest', extent=border)
+    return im
+
+
+def plot_liquid_topography(ax: plt.Axes, data:DropletData):
+    liquid = np.ma.masked_where(data.phi <= 1-eps, data.phi)
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+    im = ax.imshow(liquid, cmap="Reds", vmin=0, vmax=2, alpha=0.5, extent=border)
+    return im
 
 
 def plot_phase_field_topography(ax: plt.Axes, data: DropletData):
-    g = (data.h1 - data.h2 + data.d) / data.eta
-    phi = data.phi.copy()
+    g = data.g
+    phi = data.phi
     # NOTE: the value 2.0 is for solid phase, while that of the water / vapor phase is 1.0 / 0.0 respectively.
     # these values are to match the color in the "afmhot" colormap.
-    value_contact = 2.0
-    phi[g < 0] = value_contact
-    L = data.L / data.eta
-    ax.imshow(phi, vmin=0.0, vmax=value_contact, cmap="afmhot", extent=[0., L, 0., L])
+    # value_contact = 2.0
+    # phi[g <= 0] = value_contact
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+    im = ax.imshow(phi, interpolation='nearest', vmin=0, vmax=2, cmap='afmhot', extent=border)
+    return im
 
 
-def plot_roughness_topography(ax: plt.Axes, data: DropletData):
-    h = data.h1 / data.eta
-    L = data.L / data.eta
-    ax.imshow(h, cmap="coolwarm", extent=[0, L, 0, L])
+def plot_interface_topography(ax: plt.Axes, data:DropletData):
+    dphi = np.gradient(data.phi)
+    edge = sum(dphi_i**2 for dphi_i in dphi) > 1e-3
+    interface = np.where(edge, data.phi, 0)
+    # NOTE: hard-coded pixel size 0.1
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / 1e-1
+    im = ax.imshow(interface, cmap="afmhot", vmin=0.0, vmax=2.0, interpolation='nearest', extent=border)
+    return im
 
 
-def plot_phase_field_over_gap_topography(ax: plt.Axes, data: DropletData):
-    L = data.L / data.eta
-    border = [0, L, 0, L]
-
-    # plot the gaps
-    g_dimensionless = (data.h1 - data.h2 + data.d) / data.eta
-    ax.imshow(g_dimensionless, cmap="coolwarm", extent=border)
-
-    # plot the water/vapor interface
-    phi = data.phi.copy()
-    phi_perimeter = np.ma.masked_where((phi < 0+eps) | (phi > 1-eps), phi)
-    ax.imshow(phi_perimeter, vmin=0.0, vmax=2.0, cmap="afmhot", extent=border)
-    # ax.imshow(phi_perimeter, vmin=0.0, vmax=1.0, cmap="cividis", extent=border)
-
-    # plot the solid at contact
-    phi[g_dimensionless <= 0] = 2.0
-    phi_solid = np.ma.masked_where(g_dimensionless > 0, phi)
-    ax.imshow(phi_solid, vmin=0.0, vmax=2.0, cmap="afmhot", extent=border)
+def plot_combined_topography(ax: plt.Axes, data: DropletData):
+    im1 = plot_gap_topography(ax, data)
+    im2 = plot_contact_topography(ax, data)
+    # im3 = plot_interface_topography(ax, data)
+    im4 = plot_liquid_topography(ax, data)
+    return im1, im2, im4
 
 
 def demonstrate_dynamics(ax: plt.Axes, many_data: list[DropletData]):
@@ -117,29 +171,27 @@ def demonstrate_dynamics(ax: plt.Axes, many_data: list[DropletData]):
     ax.plot(many_d/eta)
 
 
-def plot_energy(ax: plt.Axes, many_data: list[DropletData]):
-    # extract data
-    eta = many_data[0].eta
-    many_d = np.stack([data.d for data in many_data])
-    # TODO: better data_record?
-    many_E = np.stack([getattr(data, "E") for data in many_data])
+def plot_gibbs_free_energy(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
 
-    # split the data into "pull" and "push"
-    # TODO: cannot tell "orphan" data points
-    pull = np.diff(many_d, prepend=many_d[0]) >= 0
-    push = np.diff(many_d, prepend=many_d[0]) < 0
+    if n_step is None:
+        n_step = len(pr.evolution.t_exec)
 
-    all_d_pull = many_d[pull]
-    all_E_pull = many_E[pull]
-    all_d_push = many_d[push]
-    all_E_push = many_E[push]
+    # Get the first few data points
+    E = pr.evolution.E[:n_step]
+    p = pr.evolution.p[:n_step]
+    V = pr.evolution.V[:n_step]
+    G = E - p * V
 
-    # plotting
-    ax.plot(all_d_pull/eta, all_E_pull/eta**2, "rx-", ms=8, mfc="none", label="retraction")
-    ax.plot(all_d_push/eta, all_E_push/eta**2, "bo--", ms=8, mfc="none", label="approach")
+    # Non-dimensionalize
+    eta = pr.modelling.eta
+    G = G / (eta**2)  # NOTE: actually needs to be divided again by 'gamma', but 'gamma' is symbolic so far.
 
-    # format the plot
-    ax.legend(loc="lower right")
+    # Plot the x, y, z component of forces
+    steps = np.arange(n_step)
+    ax.plot(steps, G, color="C1", linestyle="-", marker="x", ms=5, mfc="none", label=r"$G$")
+
+    # Format the plot
+    ax.legend(loc='lower left')
     ax.grid()
 
 
@@ -164,30 +216,82 @@ def plot_PSD(ax: plt.Axes):
     ax.grid()
 
 
-def plot_force(ax: plt.Axes, many_data: list[DropletData]):
-    # extract data
-    eta = many_data[0].eta
-    many_d = np.stack([data.d for data in many_data])
-    # TODO: better data_record?
-    many_F = np.stack([getattr(data, "F") for data in many_data])
+def plot_normal_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
 
-    # split the data into "pull" and "push"
-    # TODO: cannot tell "orphan" data points
-    pull = np.diff(many_d, prepend=many_d[0]) >= 0
-    push = np.diff(many_d, prepend=many_d[0]) < 0
+    if n_step is None:
+        n_step = len(pr.evolution.t_exec)
 
-    d_pull = np.array(many_d[pull])
-    f_pull = np.array(many_F[pull])
-    d_push = np.array(many_d[push])
-    f_push = np.array(many_F[push])
+    # Get the first few data points
+    f = pr.evolution.F[:n_step]
 
-    # compute force and plotting
-    ax.plot(d_pull/eta, f_pull/eta, color="r", linestyle="-", marker="o", mfc="none", label="retraction")
-    ax.plot(d_push/eta, f_push/eta, color="b", linestyle="--", marker="x", mfc="none", label="approach")
+    # Non-dimensionalize
+    eta = pr.modelling.eta
+    f = f / eta  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
-    # format the plot
-    ax.legend()
+    # Plot the x, y, z component of forces
+    steps = np.arange(n_step)
+    ax.plot(steps, f[:,2], color="b", linestyle="-", marker="x", ms=5, mfc="none", label=r"$F_z$")
+
+    # Format the plot
+    ax.legend(loc='lower left')
     ax.grid()
+
+
+def plot_shear_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
+
+    if n_step is None:
+        n_step = len(pr.evolution.t_exec)
+
+    # Get the first few data points
+    f = pr.evolution.F[:n_step]
+
+    # Non-dimensionalize
+    eta = pr.modelling.eta
+    f = f / eta  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+
+    # Plot the x, y, z component of forces
+    steps = np.arange(n_step)
+    ax.plot(steps, f[:,0], color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$F_x$")
+    ax.plot(steps, f[:,1], color="g", linestyle="--", marker="^", ms=5, mfc="none", label=r"$F_y$")
+
+    # Format the plot
+    ax.legend(loc='lower left')
+    ax.grid()
+
+
+def plot_force_curves(ax: plt.Axes, pr: ProcessedResult, idx_stop: int=None):
+    """
+    idx_stop: the index to stop; in case of plotting the first few data points.
+    """
+
+    # Get the first 'idx_stop' data
+    r = pr.evolution.r[:idx_stop]
+    f = pr.evolution.F[:idx_stop]
+
+    # Non-dimensionalize by using 'eta'
+    eta = pr.modelling.eta
+    r = la.norm(r, axis=-1)
+    r = r / eta
+    f = f / eta  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+
+    # Plot the x, y, z component of forces
+    [l1] = ax.plot(r, f[:,0], color="r", linestyle="-", marker="o", mfc="none", label=r"$f_x$")
+    [l2] = ax.plot(r, f[:,1], color="g", linestyle="--", marker="^", mfc="none", label=r"$f_y$")
+    [l3] = ax.plot(r, f[:,2], color="b", linestyle=":", marker="x", mfc="none", label=r"$f_z$")
+
+    # Format the plot
+    ax.legend(loc='lower left')
+    ax.grid()
+
+    return l1, l2, l3
+
+
+def s(ax: plt.Axes, pr: ProcessedResult):
+    z = pr.evolution.z1
+    z_steps = np.diff(z, prepend=z[0])
+    # TODO: cannot tell "orphan" data points
+    is_pull = z_steps > 0
+    is_push = z_steps < 0
 
 
 def hide_border(ax: plt.Axes):
@@ -204,8 +308,9 @@ def hide_ticks(ax: plt.Axes):
 def latexify_plot(font_size: int):
     params = {
         'text.latex.preamble': r"\usepackage{gensymb} \usepackage{amsmath}",
-        'text.usetex': True,
+        'text.usetex': False,  # use_tex = True if os.system('which latex') else False
         'font.family': 'serif',
+        # 'font.size': font_size,
         'axes.labelsize': font_size,
         'axes.titlesize': font_size,
         'legend.fontsize': font_size,
@@ -213,22 +318,3 @@ def latexify_plot(font_size: int):
         'ytick.labelsize': font_size,
     }
     matplotlib.rcParams.update(params)
-
-
-def animate_droplet_evolution_with_force_curve(many_data: list[DropletData]):
-    eta = many_data[0].eta
-    many_d = np.stack([data.d for data in many_data])
-    d_ax_min = many_d.min() / eta - 0.5
-    d_ax_max = many_d.max() / eta + 0.5
-
-    fig, axs = plt.subplots(2, 1, gridspec_kw={"height_ratios": [0.6, 1]})
-
-    def update_image(frame: int):
-        for ax in axs:
-            ax.clear()
-        plot_force(axs[0], many_data[0:1+frame])
-        axs[0].set_xlim(d_ax_min, d_ax_max)
-        plot_phase_field_over_gap_topography(axs[1], many_data[frame])
-        return [axs[0].lines, axs[1].images]
-
-    return animation.FuncAnimation(fig, update_image, len(many_data), interval=500, repeat_delay=3000)
