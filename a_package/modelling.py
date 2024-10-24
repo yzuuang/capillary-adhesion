@@ -53,12 +53,13 @@ class SelfAffineRoughness:
         return C
 
 
-def PSD_to_height(C: np.ndarray, seed=None):
+def PSD_to_height(C: np.ndarray, rng=None, seed=None):
     # <h^2> corresponding to PSD, thus, take the square-root
     h_norm = np.sqrt(C)
 
     # impose some random phase angle
-    rng = random.default_rng(seed)
+    if rng is None:
+        rng = random.default_rng(seed)
     phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, C.shape))
 
     return fft.ifftn(h_norm * phase_angle).real
@@ -73,6 +74,7 @@ class CapillaryBridge:
     """
     region: Region
     eta: float
+    beta: float  # surface tensions: (SL - SG) / LG
     h1: np.ndarray
     h2: np.ndarray
     ix1_iy1: tuple[int, int] = None
@@ -85,7 +87,7 @@ class CapillaryBridge:
         if self.ix1_iy1 is None:
             self.ix1_iy1 = [0, 0]
         self.h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
-        self.inner = ComputeCapillary(self)
+        self.inner = ComputeCapillary(self.region, self.eta, self.beta)
 
     def update_gap(self):
         # Lateral displacement of the solid top
@@ -100,7 +102,7 @@ class CapillaryBridge:
         self.g[self.no_gap] = 0
 
         # Call the inner class method
-        self.inner.update_gap(self.g.ravel())
+        self.inner.update_gap(self.h1.ravel(), self.h2.ravel(), self.g.ravel())
 
     def update_phase_field(self):
         # Clean the phase-field where the solid bodies contact
@@ -174,9 +176,7 @@ class ComputeCapillary:
     Integral of double well potential is evaluated via a centroid rule of Quadrature for triangles.
     """
 
-    def __init__(self, capi: CapillaryBridge):
-        # The grid
-        region = capi.region
+    def __init__(self, region: Region, eta: float, gamma: float):
         # Number of pixels
         n_pixel = region.nx * region.ny
         # 2 triangle elements per pixel
@@ -187,7 +187,9 @@ class ComputeCapillary:
         self.map = FirstOrderElement(region)
 
         # Copy simple parameters
-        self.eta = capi.eta
+        self.eta = eta
+        self.gamma = gamma
+        self.no_gamma = np.isclose(gamma, 0)
 
         # The gap between two solid bodies
         self.g = np.empty((n_element))
@@ -214,14 +216,35 @@ class ComputeCapillary:
         # a 4th oder polynomial, it seems sufficient to yield a solution in numerical experiments. 
         # weight = np.ones((1, n_quadrature * n_elem), dtype=float)
 
-    def update_gap(self, g: np.ndarray):
+    def update_gap(self, h1: np.ndarray, h2: np.ndarray, g: np.ndarray):
         """
+        h1 --- nodal value, flat.
+        h2 --- nodal value, flat.
         g --- nodal value, flat.
         """
+
         self.g = self.map.K_centroid @ g
         self.dg_dx = self.map.Dx @ g
         self.dg_dy = self.map.Dy @ g
         # dg_dz = 1
+
+        # if self.no_gamma:
+        #     self.solid_surface = None
+        #     return
+
+        # surface area
+        dh1_dx = self.map.Dx @ h1
+        dh1_dy = self.map.Dy @ h1
+        h1_surface = np.sqrt(dh1_dx**2 + dh1_dy**2 + 1)
+        dh2_dx = self.map.Dx @ h2
+        dh2_dy = self.map.Dy @ h2
+        h2_surface = np.sqrt(dh2_dx**2 + dh2_dy**2 + 1)
+        self.solid_surface = h1_surface + h2_surface
+        # TODO:
+        # compute (dxd)h dh for computing forces later
+
+        # remove surface area at solid-solid contact
+        self.solid_surface[self.g == 0] = 0
 
     def update_phase_field(self, phi: np.ndarray):
         """
@@ -232,15 +255,27 @@ class ComputeCapillary:
         self.dphi_dy = self.map.Dy @ phi
 
     def compute_energy(self) -> float:
+        # NOTE: this is not the 'true' free energy, as the constant term of gamma_SV A_region is removed
         # update necessary power terms
         self.phi_powers[1] = self.phi_powers[0] ** 2
         self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
         self.phi_powers[3] = self.phi_powers[1] ** 2
+
+        # compute water-vapour surface area
         # compute at quadrature points: (1/eta) (phi^2 - 2 phi^3 + phi^4)
         double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
         # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
         perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
-        return ((double_well + perimeter) * self.g).sum() * self.element_area
+        area_water_vapour = (double_well + perimeter) * self.g
+
+        # if self.no_gamma:
+        #     return area_water_vapour.sum() * self.element_area
+
+        # compute water-solid surface area
+        area_water_solid = self.solid_surface * self.phi_powers[0]
+
+        # return surface energy
+        return (area_water_vapour.sum() + self.gamma * area_water_solid.sum()) * self.element_area
 
     def compute_force(self):
         # update necessary power terms
@@ -261,12 +296,21 @@ class ComputeCapillary:
         # dg_dz = 1
         f_z = de_dg.sum()
 
+        # TODO: add contribution of water-solid interface
+        # h1_common = np.pow(self.dh1_dx**2 + self.dh1_dy**2 + 1, -1/2)
+        # water_h1_jacobian = (h1_common * self.dh1_dx) @ self.map.Dx + (h1_common * self.dh1_dy) @ self.map.Dy
+        # h2_common = np.pow(self.dh2_dx**2 + self.dh2_dy**2 + 1, -1/2)
+        # water_h2_jacobian = (h2_common * self.dh2_dx) @ self.map.Dx + (h2_common * self.dh2_dy) @ self.map.Dy
+        # area_water_solid_jacobian = self.beta * (water_h1_jacobian + water_h2_jacobian)
+
         return np.array([f_x, f_y, f_z]) * self.element_area
 
     def compute_energy_jacobian(self) -> np.ndarray:
         # update necessary power terms
         self.phi_powers[1] = self.phi_powers[0] ** 2
         self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
+        
+        # Contribution of water-vapour surface
         # constant within the element: 2 eta g (Dx phi Dx + Dy phi Dy)
         perimeter_jacobian = (2 * self.eta) * ((self.g * self.dphi_dx) @ self.map.Dx + 
                                                (self.g * self.dphi_dy) @ self.map.Dy)
@@ -274,8 +318,16 @@ class ComputeCapillary:
         double_well_jacobian = (2 / self.eta) * ((self.phi_powers[0] - 3 * self.phi_powers[1] +
                                                   2 * self.phi_powers[2]) * self.g) @ self.map.K_centroid
 
-        jacobian = (double_well_jacobian + perimeter_jacobian) * self.element_area
-        return jacobian
+        # area of water-vapour interface
+        area_water_vapour_jacobian = double_well_jacobian + perimeter_jacobian
+
+        # if self.no_gamma:
+        #     return area_water_vapour_jacobian * self.element_area
+
+        # Contribution of water-solid surface
+        area_water_solid_jacobian = self.solid_surface @ self.map.K_centroid
+
+        return (area_water_vapour_jacobian + self.gamma * area_water_solid_jacobian) * self.element_area
 
     def compute_volume(self) -> float:
         return (self.g * self.phi_powers[0]).sum() * self.element_area

@@ -16,10 +16,11 @@ show_me_plot = False
 
 def test_capillary_bridge_compute_energy_jacobian():
     L = 10.0
-    N = 100
+    N = 10
     region = Region(L, L, N, N)
 
     eta = L / N
+    gamma = 0.2
 
     xm, ym = np.meshgrid(region.x, region.y)
     # A ball on top and a flat plate on base
@@ -31,7 +32,7 @@ def test_capillary_bridge_compute_energy_jacobian():
     phi[(xm/L)**2 + (ym/L)**2 >= 0.5] = 0.0
 
     # Some displacement of the top body
-    capi = CapillaryBridge(region, eta, h1, h2)
+    capi = CapillaryBridge(region, eta, gamma, h1, h2)
     capi.ix1_iy1 = (1, 2)
     capi.z1 = 3 * eta
     capi.update_gap()
