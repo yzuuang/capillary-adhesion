@@ -14,13 +14,11 @@ rng = random.default_rng(seed)
 
 if __name__ == "__main__":
     # modelling parameters
-    a = 1e-1        # pixel size
+    eta = 1e-1      # interface width
+    gamma = 5e-1    # surface tensions: (SL - SG) / LG
     N = 128         # num of nodes along one axis
-    L = N * a       # lateral size
-    V = L**2 * a    # volume of the droplet
-
-    eta = 0.01      # scaling interface width
-    gamma = 0.5     # surface tensions: (SL - SG) / LG
+    L = N * eta     # lateral size
+    V = L**2 * (0.5*eta)  # volume of the droplet
 
     # the region where simulation runs
     region = Region(L, L, N, N)
@@ -37,7 +35,7 @@ if __name__ == "__main__":
     h2 = PSD_to_height(C_2D, rng=rng)
 
     # combine into the model object
-    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1*a)
+    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1*eta)
     capi.update_gap()
 
     # Check the preset volume
@@ -71,11 +69,8 @@ if __name__ == "__main__":
     phi = rng.random((N, N))
 
     # run simulation routine
-    d_min = 1 * a
-    d_max = d_min
-    d_step = 0.01 * a
-
+    m_track = [(0, i) for i in range(N+1)]
     path = __file__.replace(".py", ".data")
     with working_directory(path, read_only=False) as store:
         store.brand_new()
-        simulate_quasi_static_pull_push(store, capi, solver, V, d_min, d_max, d_step)
+        simulate_quasi_static_slide(store, capi, solver, V, m_track)
