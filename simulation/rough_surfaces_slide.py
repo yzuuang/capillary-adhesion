@@ -69,7 +69,12 @@ if __name__ == "__main__":
     phi = rng.random((N, N))
 
     # run simulation routine
-    m_track = [(0, i) for i in range(N+1)]
+    n_pixel_to_slide = N
+    n_step_per_pixel = 10
+    n_step = n_step_per_pixel * n_pixel_to_slide
+    l_step = 1 / n_step_per_pixel
+    m_track = np.column_stack((np.arange(n_step)*l_step, np.zeros(n_step)))
+
     path = __file__.replace(".py", ".data")
     with working_directory(path, read_only=False) as store:
         store.brand_new()

@@ -8,6 +8,7 @@ import numpy as np
 import numpy.fft as fft
 import numpy.random as random
 import scipy.sparse as sparse
+from SurfaceTopography.Uniform.Interpolation import Bicubic
 
 from a_package.solving import NumOptEq
 
@@ -28,6 +29,8 @@ class Region:
         self.dy = self.ly / self.ny
         self.y = np.arange(self.ny) * self.dy
         self.qy = (2 * np.pi) * fft.fftfreq(self.ny, self.dy)
+
+        self.xm, self.ym = np.meshgrid(self.x, self.y)
 
 
 def wavevector_norm(*q):
@@ -85,14 +88,15 @@ class CapillaryBridge:
 
     def __post_init__(self):
         if self.ix1_iy1 is None:
-            self.ix1_iy1 = [0, 0]
-        self.h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
+            self.ix1_iy1 = (0, 0)
+        h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
+        self.interp_h1 = Bicubic(h1_origin, periodic=True)
         self.inner = ComputeCapillary(self.region, self.eta, self.beta)
 
     def update_gap(self):
         # Lateral displacement of the solid top
         # NOTE: assume periodic boundary
-        self.h1 = np.roll(self.h1_origin, self.ix1_iy1, axis=(0,1))
+        self.h1 = self.interp_h1(self.region.xm - self.ix1_iy1[0], self.region.ym - self.ix1_iy1[1])
         # Gap
         self.g = self.h1 + self.z1 - self.h2
 
