@@ -1,3 +1,4 @@
+# Python
 *~
 *.pyc
 *.cpython*.so
@@ -6,7 +7,12 @@ __pycache__
 dist
 *egg-info
 
-/archive
-/byproduct
-/chaos
+# Setups
+.vscode
+venv
+
+# Results
 /data
+*.data
+*.tar
+/figures
