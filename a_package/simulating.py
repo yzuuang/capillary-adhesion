@@ -3,14 +3,17 @@
 - Setups that are neither physics nor numerics
 - Formulating optimization problem from model functions
 - Post-processing
+- RNG (Random number generator) seeding
 """
 
 import dataclasses as dc
 import math
 
 import numpy as np
+import numpy.random as random
 
 from a_package.modelling import CapillaryBridge
+from a_package.computing import communicator
 from a_package.solving import AugmentedLagrangian
 from a_package.storing import FilesToReadWrite
 
@@ -201,3 +204,40 @@ def simulate_quasi_static_slide(
     # Post-process & save
     p_sim = post_process(sim)
     store.save("Processed", "result", p_sim)
+
+
+def get_rng(seed: _t.Optional[int] = None):
+    """Get the RNG with a given seed. The seed is broadcasted to all processes."""
+    if seed is None:
+        # Generate a random seed at the root process
+        if communicator.rank == 0:
+            seed = random.SeedSequence().entropy
+            print(f"Seed is generated: {seed}")
+
+        # Seed is a 128-bit integer. To broadcast it, we need to save into multiple integers.
+        bit_len_seed = 128
+        bit_len_buffer = 16
+        buffer = np.zeros(bit_len_seed // bit_len_buffer, dtype=np.uint16)
+
+        # Save the seed into buffer
+        if communicator.rank == 0:
+            for i in range(len(buffer)):
+                buffer[i] = seed % (1 << bit_len_buffer)
+                seed >>= bit_len_buffer
+
+        # Broadcast the seed to every process
+        for i in range(len(buffer)):
+            buffer[i] = communicator.bcast(buffer[i], root=0)
+
+        # Recover the seed from buffer
+        seed = 0
+        for i in range(len(buffer)):
+            # NOTE: One must recover Python integer from NumPy array to avoid implicit conversion.
+            seed += buffer[i].item() << (i * bit_len_buffer)
+
+        # Debug information
+        if communicator.rank == 0:
+            print(f"Seed is received: {seed}")
+
+    # Every process usees the same RNG.
+    return random.default_rng(seed)
