@@ -1,5 +1,8 @@
-"""
-Simulation routines: modelling, solving and post-processing.
+"""This file addresses the "orchestration" of simulation
+
+- Setups that are neither physics nor numerics
+- Formulating optimization problem from model functions
+- Post-processing
 """
 
 import dataclasses as dc
@@ -88,8 +91,15 @@ class ProcessedResult:
     evolution: Evolution
 
 
-def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
-                                    V: float, d_min: float, d_max: float, d_step: float):
+def simulate_quasi_static_pull_push(
+    store: FilesToReadWrite,
+    capi: CapillaryBridge,
+    solver: AugmentedLagrangian,
+    V: float,
+    d_min: float,
+    d_max: float,
+    d_step: float,
+):
     # save the configurations
     store.save("Simulation", "modelling", capi)
     store.save("Simulation", "solving", solver)
@@ -107,15 +117,16 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
     all_d = np.round(all_d, n_decimals)
 
     # inform
-    print(f"Problem size: {capi.region.nx}x{capi.region.ny}. "
-          f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}")
+    print(
+        f"Problem size: {capi.region.nx}x{capi.region.ny}. "
+        f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}"
+    )
 
     # simulate
     x = capi.phi.ravel()
     for index, d in enumerate(all_d):
         # update the parameter
-        print(f""
-              f"Parameter of interest: mean distance={d}")
+        print(f"" f"Parameter of interest: mean distance={d}")
         capi.z1 = d
         capi.update_gap()
         capi.update_phase_field()
@@ -126,7 +137,7 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
 
         # save the results
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
-        data = SimulationStep([0,0], d, t_exec, capi.phi, lam)
+        data = SimulationStep([0, 0], d, t_exec, capi.phi, lam)
         store.save("Simulation", f"steps---{index}", data)
         sim.steps.append(f"steps---{index}.json")
 
@@ -143,23 +154,29 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
     store.save("Processed", "result", p_sim)
 
 
-def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
-                                V: float, slide_by_indices: list[tuple[int, int]]):
+def simulate_quasi_static_slide(
+    store: FilesToReadWrite,
+    capi: CapillaryBridge,
+    solver: AugmentedLagrangian,
+    V: float,
+    slide_by_indices: list[tuple[int, int]],
+):
     # save the configurations
     store.save("Simulation", "modelling", capi)
     store.save("Simulation", "solving", solver)
     sim = SimulationResult("modelling.json", "solving.json", [])
 
     # inform
-    print(f"Problem size: {capi.region.nx}x{capi.region.ny}. "
-          f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}")
+    print(
+        f"Problem size: {capi.region.nx}x{capi.region.ny}. "
+        f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}"
+    )
 
     # simulate
     x = capi.phi.ravel()
     for index, m in enumerate(slide_by_indices):
         # update the parameter
-        print(f""
-              f"Parameter of interest: slide by indices={m}")
+        print(f"" f"Parameter of interest: slide by indices={m}")
         capi.ix1_iy1 = m
         capi.update_gap()
 
