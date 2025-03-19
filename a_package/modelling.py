@@ -5,13 +5,33 @@
 - Capillary bridge
 """
 
+import math
 import dataclasses as dc
 
 import numpy as np
 import numpy.linalg as la
 import numpy.fft as fft
+from scipy.interpolate import RegularGridInterpolator
 
-from a_package.computing import Region, Bicubic, CentroidQuadrature
+from a_package.computing import Region, CentroidQuadrature
+
+
+# FIXME: an idea of more "separation". Remove all discretization calls (except Region?)
+#
+# - Roughness & Plates:
+#   not aware that it computes global and then index the local. It should be some scheme that can
+# affect a functions input & output.
+#
+# - CapillaryBridge:
+#   - not aware that it starts local, and in the end, calls region to do something over global.
+#   - not aware of the difference between discrete nodal values & quadratrue field. Then
+# most of its call would accept [phi, d_phi] as parameters.
+#
+# - some imagined class that uses Fourier series.
+#
+# A common thing, it seems in the model it remains function relations. And in computing, it does
+# something to the input and also possibly something to the output. And this "does something" may
+# be implemented in "Simulation", where modelling, computing, solving are stitched together.
 
 
 @dc.dataclass(init=True)
@@ -61,38 +81,82 @@ class SelfAffineRoughness:
         # FIXME: use muFFT when the parallel is updated
         height = fft.ifftn(rms_height * phase_angle).real
 
-        return height[region.in_local_subdomain]
+        return height
 
 
 @dc.dataclass(init=True)
-class CapillaryPlanes:
-    """Deal with two solids and their displacement"""
+class RoughPlane:
+    """Solid plane with a rough surface specified by its height profile."""
 
     region: Region
+    height_original: np.ndarray
+    displacement: np.ndarray = None
+
+    def __post_init__(self):
+        if self.displacement is None:
+            self.displacement = np.zeros(3)
+
+        # Save indices for the local subdomain.
+        self.indices = self.region.collection.uint_field(
+            "indices_top", self.region.spatial_dims, "pixel"
+        )
+        self.indices.p = self.region.global_coords
+
+        # Interpolate the original height with periodic boundary
+        pad_left = 1
+        pad_right = 1
+        axis_pt_locs = tuple(
+            # Extend the range on both sides due to periodic boundary
+            np.arange(-pad_left, nb_pts + pad_right)
+            for nb_pts in self.region.nb_domain_grid_pts
+        )
+        self.interpolate_height = RegularGridInterpolator(
+            axis_pt_locs,
+            # Pad at both sides due to periodic boundary
+            np.pad(self.height_original, (pad_left, pad_right), mode="wrap"),
+            method="cubic",
+            # Then there shall be no out-of-boundary pixels
+            bounds_error=True,
+        )
+
+        # To record the shear movement in unit of pixels
+        self.nb_sheared_pixels = np.zeros(2)
+
+    @property
+    def height(self):
+        # Get components
+        [x, y, z] = self.displacement
+
+        # The tangential part, split into integer and fractional parts. The integer part is the
+        # handled by rolling, the fractional part is handled by interpolation.
+        frac_shear = np.zeros(2)
+        for axis, value in enumerate([x, y]):
+            # Normaliz such that grid_spacing == 1.0
+            frac, nb_pixels = math.modf(value / self.region.grid_spacing)
+            if nb_pixels >= 1.0:
+                self.region.roll(
+                    self.indices, int(nb_pixels - self.nb_sheared_pixels[axis]), axis=axis
+                )
+                self.nb_sheared_pixels[axis] = int(nb_pixels)
+            frac_shear[axis] = frac
+
+        # The normal part is simply added
+        return z + self.interpolate_height(
+            np.moveaxis(self.indices.p + frac_shear[..., np.newaxis, np.newaxis], 0, -1)
+        )
+
+
+@dc.dataclass(init=True)
+class SolidSolidContact:
+    """Contact between two rough solid planes."""
+
     height_base: np.ndarray
     height_top: np.ndarray
 
-    def __post_init__(self):
-        # The solid at base doesn't move, get the height in local subdomain
-        self.h_base = self.height_base[self.region.in_local_subdomain]
-
-        # The solid at top moves, interpolate with bicubic spline
-        self.interpolate_height_top = Bicubic(self.height_top, periodic=True)
-
-        # Get the global coordinates of grid points in local subdomain, normalize to [0, 1]
-        [self.x_grid, self.y_grid] = self.region.global_coords / self.region.nb_domain_grid_pts
-
-        # Get the size of the whole domain
-        [self.domain_size_x, self.domain_size_y] = (
-            self.region.nb_domain_grid_pts * self.region.grid_spacing
-        )
-
-    def gap_height(self, displacement: np.ndarray):
-        [x, y, z] = displacement
-        h_top = self.interpolate_height_top(
-            self.x_grid - x / self.domain_size_x, self.y_grid - y / self.domain_size_y
-        )
-        return np.clip(z + h_top[self.region.in_local_subdomain] - self.h_base, a_min=0)
+    @property
+    def gap_height(self):
+        # Assume interpenaltration at solid-solid contact
+        return np.clip(self.height_top - self.height_base, a_min=0, a_max=None)
 
 
 @dc.dataclass(init=True)
@@ -106,14 +170,13 @@ class CapillaryBridge:
         self.quadrature = CentroidQuadrature("quadrature_for_capillary", self.region)
         self.gap_height_var = self.quadrature.discrete_variable("gap_height", 1)
         self.phase_field_var = self.quadrature.discrete_variable("phase_field", 1)
-        self.gap_height_in_integrand = None
 
     @property
     def gap_height(self):
         return self.gap_height.s
 
     @gap_height.setter
-    def gap_height(self, value: np.ndarray):
+    def gap_height(self, value):
         self.gap_height_var.s = value
         self.region.update(self.gap_height_var.name)
         [height_in_integrand] = self.quadrature.apply_operators(
@@ -125,7 +188,12 @@ class CapillaryBridge:
     def solid_solid_contact(self):
         return np.nonzero(self.gap_height == 0)
 
-    def update_phase_field(self, value: np.ndarray):
+    @property
+    def phase_field(self):
+        return self.phase_field_var.s
+
+    @phase_field.setter
+    def phase_field(self, value):
         value[self.solid_solid_contact] = 0
         self.phase_field_var.s = value
         self.region.update(self.phase_field_var.name)

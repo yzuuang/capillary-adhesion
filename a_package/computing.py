@@ -13,8 +13,6 @@ import typing as _t
 import numpy as np
 import muGrid
 
-from SurfaceTopography.Uniform.Interpolation import Bicubic
-
 
 # The "unified" communicator
 try:
@@ -22,6 +20,7 @@ try:
 
     communicator = muGrid.Communicator(MPI.COMM_WORLD)
 except ImportError:
+    print("INFO: MPI is not installed, using stub implementation.")
     communicator = muGrid.Communicator()
 
 
@@ -44,7 +43,7 @@ class Region:
         # Find an approproiate divising scheme
         # FIXME: when the residual is not 0.
         nb_processes = communicator.size
-        max_divisor = int(nb_processes**0.5)
+        max_divisor = max(int(nb_processes**0.5), 1)
         nb_subdivisions = [max_divisor, nb_processes // max_divisor]
 
         # Add ghost buffers on both side
@@ -78,6 +77,13 @@ class Region:
         """Update field values at ghost buffers."""
         self.decomposition.communicate_ghosts(field_name)
 
+    def roll(self, field, shift, axis):
+        """Roll the field values."""
+        # NOTE: This is a speical implementation for nb_ghosts_left = nb_ghosts_right = [1, 1]
+        for _ in range(shift):
+            self.decomposition.communicate_ghosts(field.name)
+            field.s = np.roll(field.s, np.sign(shift), axis)
+
     def sum(self, field: np.ndarray):
         """Sum over the region, omitting ghost buffers.
 
@@ -103,19 +109,13 @@ class Region:
         return communicator.gather(field[self.non_ghost])
 
     @property
-    def in_local_subdomain(self):
-        """The index to get the slice of the subdomain in a field of the whole domain."""
-        return tuple(
-            slice(idx, idx + nb)
-            for (idx, nb) in zip(
-                self.decomposition.subdomain_locations, self.decomposition.nb_subdomain_grid_pts
-            )
-        )
-
-    @property
     def global_coords(self):
         """The global coordinates of grid points in local subdomain"""
         return self.decomposition.global_coords
+
+    @property
+    def nb_subdomain_grid_pts(self):
+        return self.decomposition.nb_subdomain_grid_pts
 
 
 class Field(_t.Protocol):
@@ -130,7 +130,7 @@ class Field(_t.Protocol):
         """The number of components of the field quantity."""
 
     @property
-    def s(self) -> np.ndarray[tuple[int, ...], np.dtype]:
+    def s(self) -> np.ndarray:
         """Quantity values on the field.
 
         NOTE: The model should be agonistic to discretization details, such as #sub-points, size of 
@@ -174,7 +174,7 @@ class Quadrature(abc.ABC):
         self.quadrature_label = quadrature_label
         self.region = region
         # Get & config the "field manager"
-        region.collection.set_nb_sub_pt(self.quadrature_label, self.nb_quad_pts)
+        region.collection.set_nb_sub_pts(self.quadrature_label, self.nb_quad_pts)
         self.collection = region.collection
 
     def discrete_variable(self, field_name: str, nb_components: int) -> Field:
@@ -222,10 +222,10 @@ class CentroidQuadrature(Quadrature):
     op_gradient: ConvOp
 
     def __init__(self, quadrature_label: str, region: Region):
-        super().__init__(quadrature_label, region)
 
         # Quadrature points
         self.nb_quad_pts = 2
+        super().__init__(quadrature_label, region)
         self.coords_quad_pts = np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]])
         self.weights_quad_pts = np.array([1.0] * 2)
 
@@ -236,14 +236,13 @@ class CentroidQuadrature(Quadrature):
         conv_pts_shape = [2, 2]
         nb_conv_pts = np.multiply.reduce(conv_pts_shape)
         nb_pixelnodal_pts = 1
-        nb_quad_pts = 2
 
         # A unit pixel with shape functions implemented
         pixel = LinearFiniteElementPixel()
 
         # Interpolation operator
         nb_operators_in_interpolation = 1
-        self.op_interpolation = muGrid.ConvolutionOperatorDefault(
+        self.op_interpolation = muGrid.ConvolutionOperator(
             np.reshape(
                 pixel.interpolate(self.coords_quad_pts),
                 shape=(-1, nb_conv_pts),
@@ -251,16 +250,17 @@ class CentroidQuadrature(Quadrature):
             ),
             conv_pts_shape,
             nb_pixelnodal_pts,
-            nb_quad_pts,
+            self.nb_quad_pts,
             nb_operators_in_interpolation,
         )
         # NOTE: ad-hoc in Python
-        self.op_interpolation.name = "interpolation"
+        setattr(self.op_interpolation, "name", "interpolation")
+        # self.op_interpolation.name = "interpolation"
         self.op_interpolation.nb_operators = nb_operators_in_interpolation
 
         # Gradient operator
         nb_operators_in_gradient = 2
-        self.op_gradient = muGrid.ConvolutionOperatorDefault(
+        self.op_gradient = muGrid.ConvolutionOperator(
             np.reshape(
                 pixel.gradient(self.coords_quad_pts) / region.grid_spacing,
                 shape=(-1, nb_conv_pts),
@@ -268,7 +268,7 @@ class CentroidQuadrature(Quadrature):
             ),
             conv_pts_shape,
             nb_pixelnodal_pts,
-            nb_quad_pts,
+            self.nb_quad_pts,
             nb_operators_in_gradient,
         )
         # NOTE: ad-hoc in Python
@@ -355,3 +355,7 @@ class LinearFiniteElementPixel:
                 [-1, 1],
             ],
         ]
+
+
+class BicubicSplinePixel:
+    pass
