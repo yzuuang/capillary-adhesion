@@ -127,7 +127,7 @@ def simulate_with_trajectory(
         # solve the problem
         plane_move.displacement = trajectory[:,index]
         solid_contact.height_top = plane_move.height
-        capillary.gap_height = solid_contact.gap_height
+        capillary.gap_height = solid_contact.gap_height.squeeze()
         [x, t_exec, lam] = augm_lagr.find_minimizer(x)
 
         # save the results

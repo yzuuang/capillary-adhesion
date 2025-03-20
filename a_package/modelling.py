@@ -173,7 +173,7 @@ class CapillaryBridge:
 
     @property
     def gap_height(self):
-        return self.gap_height_var.s
+        return np.squeeze(self.gap_height_var.s)
 
     @gap_height.setter
     def gap_height(self, value):
@@ -195,7 +195,7 @@ class CapillaryBridge:
     @phase_field.setter
     def phase_field(self, value):
         value[self.solid_solid_contact] = 0
-        self.phase_field_var.s = value
+        self.phase_field_var.s = np.expand_dims(value, axis=(0, 1))
         self.region.update(self.phase_field_var.name)
 
     @property
@@ -208,9 +208,9 @@ class CapillaryBridge:
 
         area_water_vapour = self.gap_height_in_integrand * (
             # double well penalty on phi
-            (1 / self.interface_width) * self.double_well_penalty(phi.s)
+            (1 / self.interfacial_width) * self.double_well_penalty(phi.s)
             # square penalty on d_phi
-            + self.interface_width * self.square_penalty(d_phi.s)
+            + self.interfacial_width * self.square_penalty(d_phi.s)
         )
 
         # FIXME: add the slope contribution.
@@ -237,7 +237,7 @@ class CapillaryBridge:
         energy_density_sens_phi = self.quadrature.integrand_field("energy_density_sens_phi", 1)
         area_water_vapour_sens_phi = self.gap_height_in_integrand * (
             # derivative of double well penalty w.r.t. phi
-            (1 / self.interface_width)
+            (1 / self.interfacial_width)
             * self.double_well_penalty_derivative(phi.s)
         )
         # FIXME: add the slope contribution.
@@ -249,7 +249,7 @@ class CapillaryBridge:
         energy_density_sens_d_phi = self.quadrature.integrand_field("energy_density_sens_d_phi", 2)
         energy_density_sens_d_phi.s = self.gap_height_in_integrand * (
             # derivative of square penalty w.r.t. d_phi
-            self.interface_width
+            self.interfacial_width
             * self.square_penalty_derivatie(d_phi.s)
         )
 
@@ -292,8 +292,8 @@ class CapillaryBridge:
         interface_perimeter = self.quadrature.integrand_field("interface_perimeter", 1)
         interface_perimeter.s = (
             # double well penalty on phi
-            (1 / self.interface_width) * self.double_well_penalty(phi.s)
+            (1 / self.interfacial_width) * self.double_well_penalty(phi.s)
             # square penalty on d_phi
-            + self.interface_width * self.square_penalty(d_phi.s)
+            + self.interfacial_width * self.square_penalty(d_phi.s)
         )
         return self.quadrature.field_integral(interface_perimeter)
