@@ -75,6 +75,10 @@ def formulate_with_constant_volume(
     augm_lagr.dx_l = dx_l
 
 
+def random_initial_guess(region: Region, rng):
+    return rng.random(region.nb_subdomain_grid_pts)
+
+
 def validate_phase_field(values: np.ndarray):
     """Check the bounds on the phase field. Which is not enforced in optimization process."""
 
