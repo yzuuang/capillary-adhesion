@@ -92,7 +92,9 @@ class Region:
         Omitting the right ghosts because the periodic boundary is not hold for a subdomain,
         those pixels don't exist in the domain.
         """
-        return communicator.sum(np.squeeze(field[..., *self.non_ghost]))
+        contiguous_copy = np.copy(np.squeeze(field[..., *self.non_ghost]), order='F')
+        print("SUM", contiguous_copy.flags)
+        return communicator.sum(contiguous_copy)
 
     def gather(self, field: np.ndarray):
         """Gather over the region, omitting ghost buffers.
@@ -106,7 +108,9 @@ class Region:
         nodes has the contribution from quadrature points located in the pixels inside
         this subdomain, but not the ones located in the pixels of the neighbouring subdomain.)
         """
-        return communicator.gather(field[self.non_ghost])
+        contiguous_copy = np.copy(np.squeeze(field[..., *self.non_ghost]), order='F')
+        print("GATHER", contiguous_copy.flags)
+        return communicator.gather(contiguous_copy)
 
     @property
     def global_coords(self):
