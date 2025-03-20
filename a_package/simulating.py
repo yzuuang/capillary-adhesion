@@ -116,12 +116,12 @@ def simulate_with_trajectory(
     # Simulation
     steps = []
     [_, plane_move] = solid_planes
-    for index, displacement in enumerate(trajectory):
+    for index in range(np.size(trajectory, axis=1)):
         # update the parameter
         print(f"" f"Parameter of interest: mean distance={trajectory[index]}")
 
         # solve the problem
-        plane_move.displacement = displacement
+        plane_move.displacement = trajectory[:,index]
         solid_contact.height_top = plane_move.height
         capillary.gap_height = solid_contact.gap_height
         [x, t_exec, lam] = augm_lagr.find_minimizer(x)
