@@ -8,12 +8,13 @@
 
 import dataclasses as dc
 import math
+import typing as _t
 
 import numpy as np
 import numpy.random as random
 
-from a_package.modelling import CapillaryBridge
-from a_package.computing import communicator
+from a_package.modelling import *
+from a_package.computing import Region, communicator
 from a_package.solving import AugmentedLagrangian
 from a_package.storing import FilesToReadWrite
 
@@ -32,6 +33,109 @@ class SimulationResult:
     modelling: CapillaryBridge
     solving: AugmentedLagrangian
     steps: list[SimulationStep]
+
+
+def formulate_with_constant_volume(
+    region: Region,
+    capillary: CapillaryBridge,
+    water_volume: float,
+    augm_lagr: AugmentedLagrangian,
+):
+
+    def f(x: np.ndarray) -> float:
+        capillary.phase_field = x.reshape(region.nb_subdomain_grid_pts)
+        return capillary.energy
+
+    augm_lagr.f = f
+
+    def g(x: np.ndarray) -> float:
+        capillary.phase_field = x.reshape(region.nb_subdomain_grid_pts)
+        return capillary.volume - water_volume
+
+    augm_lagr.g = g
+
+    def l(x: np.ndarray, lam: float, c: float) -> float:
+        capillary.phase_field = x.reshape(region.nb_subdomain_grid_pts)
+        return (
+            capillary.energy
+            + lam * (capillary.volume - water_volume)
+            + 0.5 * c * (capillary.volume - water_volume) ** 2
+        )
+
+    augm_lagr.l = l
+
+    def dx_l(x: np.ndarray, lam: float, c: float) -> np.ndarray:
+        capillary.phase_field = x.reshape(region.nb_subdomain_grid_pts)
+        return (
+            capillary.energy_sensitivity
+            + lam * capillary.volume_sensitivity
+            + c * (capillary.volume - water_volume) * capillary.volume_sensitivity
+        )
+
+    augm_lagr.dx_l = dx_l
+
+
+def validate_phase_field(values: np.ndarray):
+    """Check the bounds on the phase field. Which is not enforced in optimization process."""
+
+    # phase field < 0
+    if np.any(values < 0):
+        outlier = np.where(values < 0, values, np.nan)
+        count = np.count_nonzero(~np.isnan(outlier))
+        extreme = np.nanmin(outlier)
+        print(f"Notice: phase field has {count} values < 0, min at {extreme:.2e}")
+
+    # phase field > 1
+    if np.any(values > 1):
+        outlier = np.where(values > 1, values, np.nan)
+        count = np.count_nonzero(~np.isnan(outlier))
+        extreme = np.nanmax(outlier)
+        print(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
+
+
+def simulate_with_trajectory(
+    store: FilesToReadWrite,
+    region: Region,
+    solid_planes: tuple[RoughPlane, RoughPlane],
+    solid_contact: SolidSolidContact,
+    capillary: CapillaryBridge,
+    trajectory: np.ndarray,
+    augm_lagr: AugmentedLagrangian,
+    init_guess: np.ndarray,
+):
+    # save the configurations
+    if communicator.rank == 0:
+        store.save("Simulation", "solving", augm_lagr)
+
+    # inform
+    print(f"Simulating for all {len(trajectory)} ")
+
+    # initial guess
+    x = np.ravel(init_guess)
+
+    # Simulation
+    steps = []
+    [_, plane_move] = solid_planes
+    for index, displacement in enumerate(trajectory):
+        # update the parameter
+        print(f"" f"Parameter of interest: mean distance={trajectory[index]}")
+
+        # solve the problem
+        plane_move.displacement = displacement
+        solid_contact.height_top = plane_move.height
+        capillary.gap_height = solid_contact.gap_height
+        [x, t_exec, lam] = augm_lagr.find_minimizer(x)
+
+        # save the results
+        phi = x.reshape(region.nb_subdomain_grid_pts)
+        store.save("Simulation", f"steps---{index}", region.gather(phi))
+        steps.append(f"steps---{index}.json")
+
+        # Check the bounds on phase field
+        validate_phase_field(phi)
+
+    # Save simulation results
+    store.save("Simulation", "result", steps)
 
 
 def post_process(res: SimulationResult):
@@ -94,120 +198,10 @@ class ProcessedResult:
     evolution: Evolution
 
 
-def simulate_quasi_static_pull_push(
-    store: FilesToReadWrite,
-    capi: CapillaryBridge,
-    solver: AugmentedLagrangian,
-    V: float,
-    d_min: float,
-    d_max: float,
-    d_step: float,
-):
-    # save the configurations
-    store.save("Simulation", "modelling", capi)
-    store.save("Simulation", "solving", solver)
-    sim = SimulationResult("modelling.json", "solving.json", [])
-
-    # generate all `d` (mean distances) values
-    num_d = math.floor((d_max - d_min) / d_step) + 1
-    d_departing = d_min + d_step * np.arange(num_d)
-    d_approaching = d_max - d_step * np.arange(num_d)
-    all_d = np.concatenate((d_approaching, d_departing[1:]))
-
-    # Truncate to remove floating point errors
-    # NOTE: assume 'd_step' < 0
-    n_decimals = 6
-    all_d = np.round(all_d, n_decimals)
-
-    # inform
-    print(
-        f"Problem size: {capi.region.nx}x{capi.region.ny}. "
-        f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}"
-    )
-
-    # simulate
-    x = capi.phi.ravel()
-    for index, d in enumerate(all_d):
-        # update the parameter
-        print(f"" f"Parameter of interest: mean distance={d}")
-        capi.z1 = d
-        capi.update_gap()
-        capi.update_phase_field()
-
-        # solve the problem
-        numopt = capi.formulate_with_constant_volume(V)
-        x, t_exec, lam = solver.solve_minimisation(numopt, x)
-
-        # save the results
-        capi.phi = x.reshape(capi.region.nx, capi.region.ny)
-        data = SimulationStep([0, 0], d, t_exec, capi.phi, lam)
-        store.save("Simulation", f"steps---{index}", data)
-        sim.steps.append(f"steps---{index}.json")
-
-        # Check the bounds on phase field
-        capi.validate_phase_field()
-
-    # Save simulation results
-    store.save("Simulation", "result", sim)
-
-    # Load again to get all data (because they were saved part by part)
-    sim = store.load("Simulation", "result", SimulationResult)
-    # Post-process & save
-    p_sim = post_process(sim)
-    store.save("Processed", "result", p_sim)
-
-
-def simulate_quasi_static_slide(
-    store: FilesToReadWrite,
-    capi: CapillaryBridge,
-    solver: AugmentedLagrangian,
-    V: float,
-    slide_by_indices: list[tuple[int, int]],
-):
-    # save the configurations
-    store.save("Simulation", "modelling", capi)
-    store.save("Simulation", "solving", solver)
-    sim = SimulationResult("modelling.json", "solving.json", [])
-
-    # inform
-    print(
-        f"Problem size: {capi.region.nx}x{capi.region.ny}. "
-        f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}"
-    )
-
-    # simulate
-    x = capi.phi.ravel()
-    for index, m in enumerate(slide_by_indices):
-        # update the parameter
-        print(f"" f"Parameter of interest: slide by indices={m}")
-        capi.ix1_iy1 = m
-        capi.update_gap()
-
-        # solve the problem
-        numopt = capi.formulate_with_constant_volume(V)
-        x, t_exec, lam = solver.solve_minimisation(numopt, x)
-
-        # save the result
-        capi.phi = x.reshape(capi.region.nx, capi.region.ny)
-        data = SimulationStep(m, capi.z1, t_exec, capi.phi, lam)
-        store.save("Simulation", f"steps---{index}", data)
-        sim.steps.append(f"steps---{index}.json")
-
-        # Check the bounds on phase field
-        capi.validate_phase_field()
-
-    # Save simulation results
-    store.save("Simulation", "result", sim)
-
-    # Load again to get all data (because they were saved part by part)
-    sim = store.load("Simulation", "result", SimulationResult)
-    # Post-process & save
-    p_sim = post_process(sim)
-    store.save("Processed", "result", p_sim)
-
-
 def get_rng(seed: _t.Optional[int] = None):
-    """Get the RNG with a given seed. The seed is broadcasted to all processes."""
+    """Get the RNG with a given seed. When no seed is given, it generates a random seed at rank 0
+    and broadcasts it.
+    """
     if seed is None:
         # Generate a random seed at the root process
         if communicator.rank == 0:
