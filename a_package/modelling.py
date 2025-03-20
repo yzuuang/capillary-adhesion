@@ -173,7 +173,7 @@ class CapillaryBridge:
 
     @property
     def gap_height(self):
-        return self.gap_height.s
+        return self.gap_height_var.s
 
     @gap_height.setter
     def gap_height(self, value):
