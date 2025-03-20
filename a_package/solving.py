@@ -1,43 +1,20 @@
-"""
-Solving the numerical optimization problem. No physics meaning in this file.
+"""This file addreses solving optimization problem.
+
+- Approximate a constrained optimization with an unconstrained problem using augmented Lagrangian 
+method.
+- Iterative approaches to find numerically the minimizer of an unconstrained problem.
 """
 
 import dataclasses as dc
+import typing as _t
 import timeit
-import typing as t_
 
 import numpy as np
 import scipy.optimize as optimize
 
 
-@dc.dataclass
-class NumOptEq:
-    """Numerical optimization problem with equality constraints.
-
-    x* = arg min f(x)
-
-    s.t. g(x) = 0
-    """
-
-    f: t_.Callable[[np.ndarray], float]
-    """
-    def f(x: np.ndarray) -> float: ...
-    """
-
-    f_grad: t_.Callable[[np.ndarray], np.ndarray]
-    """
-    def f_grad(x: np.ndarray) -> np.ndarray: ...
-    """
-
-    g: t_.Callable[[np.ndarray], float]
-    """
-    def g(x: np.ndarray) -> float: ...
-    """
-
-    g_grad: t_.Callable[[np.ndarray], np.ndarray]
-    """
-    def g_grad(x: np.ndarray) -> np.ndarray: ...
-    """
+# Type: the solver always expects a 1D array.
+FlatArray: _t.TypeAlias = np.ndarray[tuple[int], np.dtype]
 
 
 @dc.dataclass
@@ -49,8 +26,38 @@ class AugmentedLagrangian:
     c_upper_bound: float
     beta: float
 
-    def solve_minimisation(self, numopt: NumOptEq, x0: np.ndarray):
-        # compute all possible `c` values, i.e. for(c=c_init; c<c_upper_bound; c*=beta)
+    @staticmethod
+    def f(x):
+        """To be specified by the simulation. Should return the objective
+        function value at x.
+        """
+        pass
+
+    @staticmethod
+    def g(x):
+        """To be specified by the simulation. Should return the constraint
+        function value at x.
+        """
+        pass
+
+    # NOTE: define `l` and `dx_l` explicitly to avoid repeated updating of phase-field.
+
+    @staticmethod
+    def l(x, lam, c):
+        """To be specified by the simulation. Should return values equal to
+        f(x) + lam * g(x) + (0.5 * c) * g(x)**2
+        """
+        pass
+
+    @staticmethod
+    def dx_l(x, lam, c):
+        """To be specified by the simulation. Should return values equal to
+        dx_f(x) + lam * dx_g(x) + c * g(x) * dx_g(x)
+        """
+        pass
+
+    def find_minimizer(self, x0: np.ndarray):
+        # compute all possible `                                                                                                                                                                 c` values, i.e. for(c=c_init; c<c_upper_bound; c*=beta)
         num_iter = int(np.log(self.c_upper_bound / self.c_init) / np.log(self.beta)) + 1
         cc = self.c_init * np.pow(self.beta, np.arange(num_iter))
 
@@ -60,28 +67,28 @@ class AugmentedLagrangian:
         t_exec = 0
 
         # inform
-        tabel_header = ['Iter', 'T_exec', 'Objective', 'lambda\t', 'Lagrangian', 'c\t', 'Augm. Lagr.',
-                        'INFO']
-        print(*tabel_header, sep='\t')
+        tabel_header = [
+            "Iter",
+            "T_exec",
+            "Objective",
+            "lambda\t",
+            "Lagrangian",
+            "c\t",
+            "Augm. Lagr.",
+            "INFO",
+        ]
+        print(*tabel_header, sep="\t")
 
         for k, c in enumerate(cc):
-            # derive augmented lagrangian
-            def l(x: np.ndarray):
-                """Augmented Lagrangian."""
-                g_x = numopt.g(x)
-                return numopt.f(x) + lam * g_x + (0.5 * c) * g_x ** 2
-
-            def l_grad(x: np.ndarray):
-                """Gradient of the Augmented Lagrangian."""
-                return numopt.f_grad(x) + (lam + c * numopt.g(x)) * numopt.g_grad(x)
-
             # solve minimization problem
             t_exec_sub = -timeit.default_timer()
             [x_plus, l_plus, info] = optimize.fmin_l_bfgs_b(
-                l,
-                x_plus,  # old solution as new initial guess
-                bounds=[(0, 1)] * len(x_plus),
-                fprime=l_grad,
+                self.l,
+                # old solution as new initial guess
+                x_plus,
+                # bounds=[(0, 1)] * len(x_plus),
+                fprime=self.dx_l,
+                args=(lam, c),
                 factr=1e1,  # for extremely high accuracy
                 pgtol=self.tol_convergence,
                 maxiter=self.inner_max_iter,
@@ -90,16 +97,24 @@ class AugmentedLagrangian:
             t_exec += t_exec_sub
 
             # inform
-            f_plus = numopt.f(x_plus)
-            error_g_x = numopt.g(x_plus)
+            f_plus = self.f(x_plus)
+            error_g_x = self.g(x_plus)
             lagr1 = f_plus + lam * error_g_x
 
-            info['max_grad'] = max(info['grad'])
-            del info['grad']
+            info["max_grad"] = max(info["grad"])
+            del info["grad"]
 
-            tabel_entry = [f"#{k}", f"{round(t_exec_sub, 2):.2f}s", f"{f_plus:.2e}", f"{lam:.2e}",
-                           f"{lagr1:.2e}", f"{c:.2e}", f"{l_plus:.2e}", f"{info}"]
-            print('\t'.join(tabel_entry))
+            tabel_entry = [
+                f"#{k}",
+                f"{round(t_exec_sub, 2):.2f}s",
+                f"{f_plus:.2e}",
+                f"{lam:.2e}",
+                f"{lagr1:.2e}",
+                f"{c:.2e}",
+                f"{l_plus:.2e}",
+                f"{info}",
+            ]
+            print("\t".join(tabel_entry))
 
             # convergence criteria
             if abs(error_g_x) < self.tol_constraint:
