@@ -10,11 +10,7 @@ import typing as _t
 import timeit
 
 import numpy as np
-import scipy.optimize as optimize
-
-
-# Type: the solver always expects a 1D array.
-FlatArray: _t.TypeAlias = np.ndarray[tuple[int], np.dtype]
+from NuMPI.Optimization import l_bfgs
 
 
 @dc.dataclass
@@ -27,14 +23,14 @@ class AugmentedLagrangian:
     beta: float
 
     @staticmethod
-    def f(x):
+    def f(x: np.ndarray):
         """To be specified by the simulation. Should return the objective
         function value at x.
         """
         pass
 
     @staticmethod
-    def g(x):
+    def g(x: np.ndarray):
         """To be specified by the simulation. Should return the constraint
         function value at x.
         """
@@ -43,14 +39,14 @@ class AugmentedLagrangian:
     # NOTE: define `l` and `dx_l` explicitly to avoid repeated updating of phase-field.
 
     @staticmethod
-    def l(x, lam, c):
+    def l(x: np.ndarray, lam: float, c: float):
         """To be specified by the simulation. Should return values equal to
         f(x) + lam * g(x) + (0.5 * c) * g(x)**2
         """
         pass
 
     @staticmethod
-    def dx_l(x, lam, c):
+    def dx_l(x: np.ndarray, lam: float, c: float):
         """To be specified by the simulation. Should return values equal to
         dx_f(x) + lam * dx_g(x) + c * g(x) * dx_g(x)
         """
@@ -75,34 +71,34 @@ class AugmentedLagrangian:
             "Lagrangian",
             "c\t",
             "Augm. Lagr.",
-            "INFO",
+            "max grad",
         ]
         print(*tabel_header, sep="\t")
 
         for k, c in enumerate(cc):
             # solve minimization problem
             t_exec_sub = -timeit.default_timer()
-            [x_plus, l_plus, info] = optimize.fmin_l_bfgs_b(
+            res = l_bfgs(
                 self.l,
                 # old solution as new initial guess
                 x_plus,
                 # bounds=[(0, 1)] * len(x_plus),
-                fprime=self.dx_l,
+                jac=self.dx_l,
                 args=(lam, c),
-                factr=1e1,  # for extremely high accuracy
-                pgtol=self.tol_convergence,
+                ftol=1e1,  # for extremely high accuracy
+                gtol=self.tol_convergence,
                 maxiter=self.inner_max_iter,
             )
             t_exec_sub += timeit.default_timer()
             t_exec += t_exec_sub
 
             # inform
+            x_plus = res['x']
+            l_plus = res['fun']
+            l_grad = res['jac']
             f_plus = self.f(x_plus)
             error_g_x = self.g(x_plus)
             lagr1 = f_plus + lam * error_g_x
-
-            info["max_grad"] = max(info["grad"])
-            del info["grad"]
 
             tabel_entry = [
                 f"#{k}",
@@ -112,7 +108,7 @@ class AugmentedLagrangian:
                 f"{lagr1:.2e}",
                 f"{c:.2e}",
                 f"{l_plus:.2e}",
-                f"{info}",
+                f"{np.amax[np.absolute(l_grad)]:.2e}",
             ]
             print("\t".join(tabel_entry))
 
