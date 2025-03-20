@@ -141,6 +141,20 @@ class Field(_t.Protocol):
 class ConvOp(_t.Protocol):
     """Use type hints as a reminder that it is a muGrid Convolution Operator."""
 
+
+    def apply(self, field_in: Field, field_out: Field):
+        """Apply the mapping."""
+
+    def transpose(self, field_in: Field, field_out: Field):
+        """Apply the inverse mapping. Matrix-wise, the operator is transposed."""
+
+
+@dc.dataclass(init=True)
+class PixelOp:
+    op: ConvOp
+    name: str
+    nb_operators: int
+
     name: str
     """A unique name. It is useful to name the output field properly in "Quadrature".
 
@@ -153,12 +167,6 @@ class ConvOp(_t.Protocol):
 
     FIXME: muGrid doesn't expose this property, it is ad-hoc in Python.
     """
-
-    def apply(self, field_in: Field, field_out: Field):
-        """Apply the mapping."""
-
-    def transpose(self, field_in: Field, field_out: Field):
-        """Apply the inverse mapping. Matrix-wise, the operator is transposed."""
 
 
 class Quadrature(abc.ABC):
@@ -183,11 +191,11 @@ class Quadrature(abc.ABC):
     def integrand_field(self, field_name: str, nb_components: int) -> Field:
         return self.collection.real_field(field_name, nb_components, self.quadrature_label)
 
-    def apply_operators(self, field: Field, operators: list[ConvOp]) -> list[Field]:
+    def apply_operators(self, field: Field, operators: list[PixelOp]) -> list[Field]:
         result = []
         for operator in operators:
             field_out = self.integrand_field(f"{field.name}_{operator.name}", operator.nb_operators)
-            operator.apply(field, field_out)
+            operator.op.apply(field, field_out)
             result.append(field_out)
         return result
 
@@ -197,14 +205,14 @@ class Quadrature(abc.ABC):
             np.einsum("cs..., s-> c...", field.s, self.weights_quad_pts)
         )
 
-    def field_sensitivity(self, integrand_parts: list[Field], operators: list[ConvOp]):
+    def field_sensitivity(self, integrand_parts: list[Field], operators: list[PixelOp]):
         result = []
         for integrand_part, operator in zip(integrand_parts, operators):
             field_out = self.discrete_variable(
                 f"{integrand_part.name}_{operator.name}_trans",
                 integrand_part.nb_components // operator.nb_operators,
             )
-            operator.transpose(integrand_part, field_out)
+            operator.op.transpose(integrand_part, field_out)
             result.append(field_out)
 
         return self.region_size_ratio * self.region.gather(  # Gather the whole domain
@@ -218,8 +226,8 @@ class CentroidQuadrature(Quadrature):
     each pixel. It provides discrete operators for interpolation and gradient.
     """
 
-    op_interpolation: ConvOp
-    op_gradient: ConvOp
+    op_interpolation: PixelOp
+    op_gradient: PixelOp
 
     def __init__(self, quadrature_label: str, region: Region):
 
@@ -242,38 +250,39 @@ class CentroidQuadrature(Quadrature):
 
         # Interpolation operator
         nb_operators_in_interpolation = 1
-        self.op_interpolation = muGrid.ConvolutionOperator(
-            np.reshape(
-                pixel.interpolate(self.coords_quad_pts),
-                shape=(-1, nb_conv_pts),
-                order="F",
+        self.op_interpolation = PixelOp(
+            muGrid.ConvolutionOperator(
+                np.reshape(
+                    pixel.interpolate(self.coords_quad_pts),
+                    shape=(-1, nb_conv_pts),
+                    order="F",
+                ),
+                conv_pts_shape,
+                nb_pixelnodal_pts,
+                self.nb_quad_pts,
+                nb_operators_in_interpolation,
             ),
-            conv_pts_shape,
-            nb_pixelnodal_pts,
-            self.nb_quad_pts,
+            "interpolation", 
             nb_operators_in_interpolation,
         )
-        # NOTE: ad-hoc in Python
-        setattr(self.op_interpolation, "name", "interpolation")
-        # self.op_interpolation.name = "interpolation"
-        self.op_interpolation.nb_operators = nb_operators_in_interpolation
 
         # Gradient operator
         nb_operators_in_gradient = 2
-        self.op_gradient = muGrid.ConvolutionOperator(
-            np.reshape(
-                pixel.gradient(self.coords_quad_pts) / region.grid_spacing,
-                shape=(-1, nb_conv_pts),
-                order="F",
+        self.op_gradient = PixelOp(
+            muGrid.ConvolutionOperator(
+                np.reshape(
+                    pixel.gradient(self.coords_quad_pts) / region.grid_spacing,
+                    shape=(-1, nb_conv_pts),
+                    order="F",
+                ),
+                conv_pts_shape,
+                nb_pixelnodal_pts,
+                self.nb_quad_pts,
+                nb_operators_in_gradient,
             ),
-            conv_pts_shape,
-            nb_pixelnodal_pts,
-            self.nb_quad_pts,
+            "gradient",
             nb_operators_in_gradient,
         )
-        # NOTE: ad-hoc in Python
-        self.op_gradient.name = "gradient"
-        self.op_gradient.nb_operators = nb_operators_in_gradient
 
 
 class LinearFiniteElementPixel:

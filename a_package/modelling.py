@@ -177,10 +177,10 @@ class CapillaryBridge:
 
     @gap_height.setter
     def gap_height(self, value):
-        self.gap_height_var.s = value
+        self.gap_height_var.s = value[np.newaxis, np.newaxis, ...]
         self.region.update(self.gap_height_var.name)
         [height_in_integrand] = self.quadrature.apply_operators(
-            self.gap_height_var, self.quadrature.op_interpolation
+            self.gap_height_var, [self.quadrature.op_interpolation]
         )
         self.gap_height_in_integrand = height_in_integrand.s
 
