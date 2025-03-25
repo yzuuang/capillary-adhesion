@@ -91,11 +91,12 @@ class CapillaryVapourLiquid:
 
     @staticmethod
     def double_well_penalty(x):
-        return np.squeeze(9 * x**2 * (1 - x) ** 2, axis=0)
+        return 9 * x**2 * (1 - x) ** 2
 
     @staticmethod
     def square_penalty(x):
-        return np.sum(x**2, axis=0)
+        # NOTE: don't eliminate the axis of #components
+        return np.expand_dims(np.sum(x**2, axis=0), axis=0)
 
     def energy_density_sensitivity(self, phi: Components_t, d_phi: Components_t):
         area_water_vapour_sens_phi = self.heterogeneous_height * (
