@@ -87,8 +87,8 @@ def generate_height_profile(grid: Grid, roughness: SelfAffineRoughness, rng):
     return height[tuple(grid.section.global_coords)]
 
 
-def random_uniform(grid: Grid, rng):
-    return rng.random(grid.section.nb_pixels)
+def random_initial_guess(grid: Grid, rng):
+    return rng.random(tuple(grid.section.nb_effective_pixels))
 
 
 @dc.dataclass(init=True)
@@ -110,6 +110,11 @@ class CapillaryBridge:
         self.pixels_rolled = np.zeros(2)
 
         self.phase_field.setup_operators(self.quadrature)
+
+        self.variable_shape = (
+            self.phase_field.nb_components_input,
+            *self.grid.section.nb_effective_pixels,
+        )
 
     def relocate_solid_plane(self, displacement: np.ndarray):
         # Get components
@@ -141,12 +146,10 @@ class CapillaryBridge:
         self,
         liquid_volume: float,
     ):
-        original_shape = (self.phase_field.nb_components_in, *self.grid.section.nb_pixels)
-
         def f(x: np.ndarray) -> float:
-            self.phase_field.update_input(x.reshape(original_shape))
-            [phi_interp, phi_grad] = self.phase_field.apply_operators_to_input(
-                [self.phase_field.op_interpolation, self.phase_field.op_gradient]
+            self.phase_field.update_input(x.reshape(self.variable_shape))
+            [phi_interp, phi_grad] = self.phase_field.apply_operators(
+                [self.phase_field.interpolation, self.phase_field.gradient]
             )
             return self.quadrature.field_integral(
                 self.vapour_liquid.energy_density(phi_interp, phi_grad)
@@ -155,10 +158,8 @@ class CapillaryBridge:
         self.solver.f = f
 
         def g(x: np.ndarray) -> float:
-            self.phase_field.update_inputte(x.reshape(original_shape))
-            [phi_interp] = self.phase_field.apply_operators_to_input(
-                [self.phase_field.op_interpolation]
-            )
+            self.phase_field.update_inputte(x.reshape(self.variable_shape))
+            [phi_interp] = self.phase_field.apply_operators([self.phase_field.interpolation])
             return (
                 self.quadrature.field_integral(self.vapour_liquid.liquid_height(phi_interp))
                 - liquid_volume
@@ -167,9 +168,9 @@ class CapillaryBridge:
         self.solver.g = g
 
         def l(x: np.ndarray, lam: float, c: float) -> float:
-            self.phase_field.update_input(x.reshape(original_shape))
-            [phi_interp, phi_grad] = self.phase_field.apply_operators_to_input(
-                [self.phase_field.op_interpolation, self.phase_field.op_gradient]
+            self.phase_field.update_input(x.reshape(self.variable_shape))
+            [phi_interp, phi_grad] = self.phase_field.apply_operators(
+                [self.phase_field.interpolation, self.phase_field.gradient]
             )
             f = self.quadrature.field_integral(
                 self.vapour_liquid.energy_density(phi_interp, phi_grad)
@@ -183,14 +184,13 @@ class CapillaryBridge:
         self.solver.l = l
 
         def dx_l(x: np.ndarray, lam: float, c: float) -> np.ndarray:
-            self.phase_field.update_input(x.reshape(original_shape))
-            [phi_interp, phi_grad] = self.phase_field.apply_operators_to_input(
-                [self.phase_field.op_interpolation, self.phase_field.op_gradient]
+            self.phase_field.update_input(x.reshape(self.variable_shape))
+            [phi_interp, phi_grad] = self.phase_field.apply_operators(
+                [self.phase_field.interpolation, self.phase_field.gradient]
             )
-            []
             dx_f = self.quadrature.pixel_area * self.phase_field.apply_transposed_to_values(
                 self.vapour_liquid.energy_density_sensitivity(phi_interp, phi_grad),
-                [self.phase_field.op_interpolation, self.phase_field.op_gradient],
+                [self.phase_field.interpolation, self.phase_field.gradient],
             )
             g = (
                 self.quadrature.field_integral(self.vapour_liquid.liquid_height(phi_interp))
@@ -198,7 +198,7 @@ class CapillaryBridge:
             )
             dx_g = self.quadrature.pixel_area * self.phase_field.apply_transposed_to_values(
                 self.vapour_liquid.liquid_height_sensitivity(phi_interp),
-                [self.phase_field.op_interpolation],
+                [self.phase_field.interpolation],
             )
             return (dx_f + (lam + c * g) * dx_g)[self.grid.coordinator.non_ghost]
 
