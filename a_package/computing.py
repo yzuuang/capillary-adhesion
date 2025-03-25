@@ -42,11 +42,17 @@ class Grid:
         )
 
         # One object for things that should be handled by each process itself
-        # FIXME: is this a general problem of muGrid periodic boundary implementaion in parallel?
         self.section = Section(
             decomposition.collection,
             decomposition.nb_subdomain_grid_pts,
             decomposition.global_coords,
+            # FIXME: is this a general problem of muGrid periodic boundary in parallel?
+            [
+                n - l - r
+                for (n, l, r) in zip(
+                    decomposition.nb_subdomain_grid_pts, nb_ghosts_left, nb_ghosts_right
+                )
+            ],
         )
 
         # One object for things that require cooperation of processes
@@ -97,7 +103,6 @@ class Coordinator:
     nb_ghosts_left: list[int]
     nb_ghosts_right: list[int]
 
-    # FIXME: move to "section"
     @property
     def non_ghost(self):
         """Indexing slices to exclude ghost buffers"""
@@ -159,6 +164,7 @@ class Section:
     pixel_collection: muGrid.GlobalFieldCollection
     nb_pixels: list[int]
     global_coords: np.ndarray
+    nb_effective_pixels: list[int]
 
     # def set_nb_sub_pts(self, *args):
     #     """
@@ -167,7 +173,7 @@ class Section:
     #     """
     #     self.pixel_collection.set_nb_sub_pts(*args)
 
-    # def real_field(self, *args) -> Field2d:
+    # def real_field(self, *args) -> Field2D:
     #     """
     #     - unique_name: str
     #     - nb_components: int
@@ -234,16 +240,10 @@ class Quadrature(abc.ABC):
         """Weights of each quadrature points. The sum weights shall equal to one."""
 
     def __init__(self, grid: Grid):
+        self.pixel_size = grid.spacing
         self.pixel_area = grid.spacing**2
         self.coordinator = grid.coordinator
-        self.collection = grid.section.pixel_collection
-        self.collection.set_nb_sub_pts(self.tag, self.nb_quad_pts)
-
-    def discrete_nodes(self, field_name: str, nb_components: int) -> Field2D:
-        return self.collection.real_field(field_name, nb_components, "pixel")
-
-    def integrand_field(self, field_name: str, nb_components: int) -> Field2D:
-        return self.collection.real_field(field_name, nb_components, self.tag)
+        grid.section.pixel_collection.set_nb_sub_pts(self.tag, self.nb_quad_pts)
 
     def field_integral(self, field: np.ndarray):
         # Sum (weighted) over quadrature points
@@ -274,19 +274,14 @@ class CentroidQuadrature(Quadrature):
 
 
 @dc.dataclass(init=True)
-class PixelOp:
+class FieldOp:
     """Ad-hoc the ConvolutionOperator with more attributes."""
 
     op: muGrid.ConvolutionOperator
-
-    name: str
-    """A unique name. It is useful to name the output field properly in "Quadrature"."""
-
-    # FIXME: this property might be better exposed by muGrid.
-    nb_operators: int
-    """#operators per quadrature points. It is useful to determine the #components of output field
-     properly in "Quadrature"
-    """
+    field_in: Field2D
+    field_out: Field2D
+    field_out_back: Field2D
+    field_out_back_in: Field2D
 
     # def apply(self, *args):
     #     """Apply the mapping.
@@ -314,51 +309,39 @@ class LinearFiniteElement:
     """
 
     def __init__(self, grid: Grid, data: np.ndarray):
-        self.grid = grid
+        self.coordinator = grid.coordinator
+        self.collection = grid.section.pixel_collection
         try:
-            self.nb_components_in = np.size(data, axis=-3)
+            self.nb_components_input = np.size(data, axis=-3)
         except IndexError:
-            self.nb_components_in = 1
-        self.field_in = grid.section.pixel_collection.real_field(
-            "phase_field_input", self.nb_components_in
-        )
+            self.nb_components_input = 1
+        self.field_input = self.collection.real_field("input", self.nb_components_input)
 
     def update_input(self, value: np.ndarray):
-        self.field_in.p = value
-        self.grid.coordinator.update(self.field_in)
+        print(f"Value is {value}")
+        self.field_input.p[self.coordinator.non_ghost] = value
+        print(f"Communicate ghost")
+        self.coordinator.update(self.field_input)
+        print(f"Finish communicating.")
 
-    def apply_operators_to_input(self, operators: list[PixelOp]) -> list[np.ndarray]:
+    def apply_operators(self, operators: list[FieldOp]) -> list[np.ndarray]:
         result = []
         for operator in operators:
-            field_out = self.integrand_field(
-                f"{self.field_in.name}_{operator.name}", operator.nb_operators
-            )
-            operator.op.apply(self.field_in, field_out)
-            result.append(field_out.s)
+            operator.op.apply(operator.field_in, operator.field_out)
+            result.append(operator.field_out.s)
         return result
 
-    def apply_transposed_to_values(self, values: list[np.ndarray], operators: list[PixelOp]):
+    def apply_transposed_to_values(self, values: list[np.ndarray], operators: list[FieldOp]):
         result = 0
         for value, operator in zip(values, operators):
-            field_in = self.integrand_field(
-                f"{self.field_in.name}_{operator.name}_dual", operator.nb_operators
-            )
-            field_in.s = value
-            field_out = self.discrete_nodes(
-                f"{field_in.name}_{operator.name}_dual_{operator.name}",
-                field_in.nb_components // operator.nb_operators,
-            )
-            operator.op.transpose(field_in, field_out)
-            result += field_out.p
+            operator.field_out_back.s = value
+            operator.op.transpose(operator.field_out_back, operator.field_out_back_in)
+            result += operator.field_out_back_in.p
 
         # Sum over sensitivities
         return np.squeeze(result, axis=0)
 
     def setup_operators(self, quadrature: Quadrature):
-        # FIXME: needs even better separation?
-        self.discrete_nodes = quadrature.discrete_nodes
-        self.integrand_field = quadrature.integrand_field
-
         nb_sub_pts = np.size(quadrature.quad_pt_local_coords, axis=0)
         conv_pts_shape = [2, 2]
         nb_pixelnodal_pts = 1
@@ -366,7 +349,7 @@ class LinearFiniteElement:
 
         # Interpolation operator
         nb_operators_interpolation = 1
-        self.op_interpolation = PixelOp(
+        self.interpolation = FieldOp(
             muGrid.ConvolutionOperator(
                 np.reshape(
                     self.interpolate_coefficients(quadrature.quad_pt_local_coords),
@@ -378,16 +361,27 @@ class LinearFiniteElement:
                 nb_sub_pts,
                 nb_operators_interpolation,
             ),
-            "interpolation",
-            nb_operators_interpolation,
+            self.field_input,
+            self.collection.real_field(
+                "field_interpolation",
+                nb_operators_interpolation * self.nb_components_input,
+                quadrature.tag,
+            ),
+            self.collection.real_field(
+                "field_interpolation_back",
+                nb_operators_interpolation * self.nb_components_input,
+                quadrature.tag,
+            ),
+            self.collection.real_field("field_interpolation_back_in", self.nb_components_input),
         )
 
         # Gradient operator
         nb_operators_gradient = 2
-        self.op_gradient = PixelOp(
+        self.gradient = FieldOp(
             muGrid.ConvolutionOperator(
                 np.reshape(
-                    self.gradient_coefficients(quadrature.quad_pt_local_coords) / self.grid.spacing,
+                    self.gradient_coefficients(quadrature.quad_pt_local_coords)
+                    / quadrature.pixel_size,
                     shape=(-1, nb_inputs),
                     order="F",
                 ),
@@ -396,8 +390,18 @@ class LinearFiniteElement:
                 nb_sub_pts,
                 nb_operators_gradient,
             ),
-            "gradient",
-            nb_operators_gradient,
+            self.field_input,
+            self.collection.real_field(
+                "field_gradient",
+                nb_operators_gradient * self.nb_components_input,
+                quadrature.tag,
+            ),
+            self.collection.real_field(
+                "field_gradient_back",
+                nb_operators_gradient * self.nb_components_input,
+                quadrature.tag,
+            ),
+            self.collection.real_field("field_gradient_back_in", self.nb_components_input),
         )
 
     def interpolate_coefficients(self, local_coords):

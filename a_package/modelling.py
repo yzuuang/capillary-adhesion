@@ -53,9 +53,9 @@ class SolidSolidContact:
     """Contact between two rough solid planes."""
 
     mean_plane_separation: float
-    height_lower: Components_t
+    height_lower: np.ndarray
 
-    def gap_height(self, height_upper: Components_t):
+    def gap_height(self, height_upper: np.ndarray):
         """The gap between two rough surface where a thrid matter can exist.
 
         Assume interpenaltration, so clip all negative values to zero.
@@ -70,7 +70,7 @@ class CapillaryVapourLiquid:
 
     interfacial_width: float
     surface_tension_ratio: float
-    heterogeneous_height: Components_t
+    heterogeneous_height: np.ndarray
 
     @property
     def solid_solid_contact(self):
@@ -130,7 +130,7 @@ class CapillaryVapourLiquid:
         return self.heterogeneous_height * phi
 
     def liquid_height_sensitivity(self, phi: Components_t):
-        return self.heterogeneous_height
+        return (self.heterogeneous_height[np.newaxis,...], )
 
     def adhesive_force(self, phi: Components_t, d_phi: Components_t):
         return (
