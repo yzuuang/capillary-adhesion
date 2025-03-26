@@ -19,6 +19,8 @@ import numpy.linalg as la
 Components_t: _t.TypeAlias = np.ndarray
 """An array with the first dimension always corresponds to the number of components. One should 
 consider other dimensions unknown (ravelled) because they are related to discretization.
+
+# NOTE: always keep the axis of components even if #components == 1.
 """
 
 
@@ -31,7 +33,7 @@ class SelfAffineRoughness:
 
     def isotropic_spectrum(self, wave_numbers: Components_t):
         # Isotropic, so it only depends on its magnitude
-        magnitude = la.norm(wave_numbers, ord=2, axis=0)
+        magnitude = np.expand_dims(la.norm(wave_numbers, ord=2, axis=0), axis=0)
 
         # Find three regimes
         constant = magnitude < self.qR
@@ -39,7 +41,7 @@ class SelfAffineRoughness:
         omitted = magnitude >= self.qS
 
         # Evaluate accordingly
-        psd = np.empty_like(magnitude)
+        psd = np.full_like(magnitude, np.nan)
         psd[constant] = self.C0 * self.qR ** (2 - 2 * self.H)
         psd[self_affine] = self.C0 * magnitude[self_affine] ** (-2 - 2 * self.H)
         psd[omitted] = 0
@@ -53,9 +55,9 @@ class SolidSolidContact:
     """Contact between two rough solid planes."""
 
     mean_plane_separation: float
-    height_lower: np.ndarray
+    height_lower: Components_t
 
-    def gap_height(self, height_upper: np.ndarray):
+    def gap_height(self, height_upper: Components_t):
         """The gap between two rough surface where a thrid matter can exist.
 
         Assume interpenaltration, so clip all negative values to zero.
@@ -70,7 +72,7 @@ class CapillaryVapourLiquid:
 
     interfacial_width: float
     surface_tension_ratio: float
-    heterogeneous_height: np.ndarray
+    heterogeneous_height: Components_t
 
     @property
     def solid_solid_contact(self):
@@ -95,7 +97,6 @@ class CapillaryVapourLiquid:
 
     @staticmethod
     def square_penalty(x):
-        # NOTE: don't eliminate the axis of #components
         return np.expand_dims(np.sum(x**2, axis=0), axis=0)
 
     def energy_density_sensitivity(self, phi: Components_t, d_phi: Components_t):
@@ -131,7 +132,7 @@ class CapillaryVapourLiquid:
         return self.heterogeneous_height * phi
 
     def liquid_height_sensitivity(self, phi: Components_t):
-        return (self.heterogeneous_height[np.newaxis,...], )
+        return (self.heterogeneous_height, )
 
     def adhesive_force(self, phi: Components_t, d_phi: Components_t):
         return (
