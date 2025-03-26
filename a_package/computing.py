@@ -192,15 +192,21 @@ class CubicSpline:
 
     def __init__(self, grid: Grid, data: np.ndarray):
         self.nb_pixels = grid.section.nb_pixels
+        # Due to periodic boundary, there is one more "hidden" grid point in the end, so plus 1 
+        # for axes in sampling data
         self.axis_pt_locs = tuple(np.arange(nb_pts + 1) for nb_pts in self.nb_pixels)
-        self.sample(data)
+        # But we don't explicitly save the value at the end, so no plus 1 for grid in interpolation
         self.pixel_locs = np.stack(
             np.meshgrid(*(np.arange(nb_pts) for nb_pts in self.nb_pixels)), axis=0
         )
+        self.sample(data)
 
     def sample(self, data: np.ndarray):
+        grid_dim = len(self.axis_pt_locs)
+        data = data.squeeze(axis=tuple(range(data.ndim - grid_dim)))
+        pad_size = [(0, 1)] * grid_dim
         self.interpolator = RegularGridInterpolator(
-            self.axis_pt_locs, np.pad(data, (0, 1), mode="wrap"), method="cubic"
+            self.axis_pt_locs, np.pad(data, pad_size, mode="wrap"), method="cubic"
         )
 
     def interpolate(self, local_coords: np.ndarray):
