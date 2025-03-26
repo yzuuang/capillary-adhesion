@@ -84,11 +84,11 @@ def generate_height_profile(grid: Grid, roughness: SelfAffineRoughness, rng):
 
     # FIXME: use muFFT to have it parallelized
     height = fft.ifftn(rms_height * phase_angle).real
-    return height[tuple(grid.section.global_coords)]
+    return height[(..., *grid.section.global_coords)]
 
 
 def random_initial_guess(grid: Grid, rng):
-    return rng.random(tuple(grid.section.nb_effective_pixels))
+    return rng.random(tuple(grid.section.nb_pixels))
 
 
 @dc.dataclass(init=True)
