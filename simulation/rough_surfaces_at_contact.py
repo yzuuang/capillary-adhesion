@@ -37,7 +37,7 @@ if __name__ == "__main__":
     h2 = PSD_to_height(C_2D, rng=rng)
 
     # combine into the model object
-    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1*a)
+    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1.5*a)
     capi.update_gap()
 
     # Check the preset volume
@@ -71,8 +71,8 @@ if __name__ == "__main__":
     phi = rng.random((N, N))
 
     # run simulation routine
-    d_min = 1 * a
-    d_max = d_min
+    d_max = 2 * a
+    d_min = 1.5 * a
     d_step = 0.01 * a
 
     path = __file__.replace(".py", ".data")

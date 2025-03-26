@@ -229,11 +229,11 @@ def plot_normal_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     f = f / eta  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
-    steps = np.arange(n_step)
-    ax.plot(steps, f[:,2], color="b", linestyle="-", marker="x", ms=5, mfc="none", label=r"$F_z$")
+    steps = np.linspace(0, 1, n_step)
+    ax.plot(steps, f[:,2], color="b", linestyle="-", marker="o", ms=3, mfc="none", label=r"$F_z$")
 
     # Format the plot
-    ax.legend(loc='lower left')
+    ax.legend(loc='upper left')
     ax.grid()
 
 

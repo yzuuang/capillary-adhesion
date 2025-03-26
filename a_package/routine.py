@@ -99,7 +99,7 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
     num_d = math.floor((d_max - d_min) / d_step) + 1
     d_departing = d_min + d_step * np.arange(num_d)
     d_approaching = d_max - d_step * np.arange(num_d)
-    all_d = np.concatenate((d_departing, d_approaching))
+    all_d = np.concatenate((d_approaching, d_departing))
 
     # Truncate to remove floating point errors
     # NOTE: assume 'd_step' < 0

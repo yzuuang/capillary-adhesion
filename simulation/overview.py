@@ -16,12 +16,18 @@ def main():
     path = os.path.join(os.path.dirname(__file__), data_folder)
     with working_directory(path, read_only=True) as store:
         pr = store.load("Processed", "result", ProcessedResult)
-
-    anim = animate_droplet_evolution_with_curves(pr)
-
     filename_base = __file__.replace(".py", f"---{data_folder}")
-    anim.save(f"{filename_base}.mp4", writer="ffmpeg")
 
+    latexify_plot(15)
+
+    # anim = animate_droplet_evolution_with_curves(pr)
+    # anim.save(f"{filename_base}.mp4", writer="ffmpeg")
+
+    [fig, ax] = plt.subplots(1, 1, figsize=(10, 3), constrained_layout=True)
+    plot_normal_force(ax, pr, None)
+    ax.set_ylabel(r"Force $F/\gamma\eta$")
+    ax.set_xlabel('Simulation progress')
+    fig.savefig(f"{filename_base}.svg", dpi=450)
     plt.show()
 
 
