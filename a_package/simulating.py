@@ -101,7 +101,7 @@ class CapillaryBridge:
     height_upper_solid: CubicSpline
     vapour_liquid: CapillaryVapourLiquid
     phase_field: LinearFiniteElement
-    quadrature: CentroidQuadrature
+    quadrature: Quadrature
     solver: AugmentedLagrangian
 
     def __post_init__(self):
@@ -111,10 +111,7 @@ class CapillaryBridge:
 
         self.phase_field.setup_operators(self.quadrature)
 
-        self.variable_shape = (
-            self.phase_field.nb_components_input,
-            *self.grid.section.nb_effective_pixels,
-        )
+        self.original_shape = (1, *self.grid.section.nb_pixels)
 
     def relocate_solid_plane(self, displacement: np.ndarray):
         # Get components
@@ -137,54 +134,62 @@ class CapillaryBridge:
                 )
                 self.pixels_rolled[axis] = nb_pixels
             frac_shear[axis] = frac
-        h1 = np.squeeze(self.rolling_height_field.p, axis=0)
-        self.height_upper_solid.sample(h1)
+        self.height_upper_solid.sample(self.rolling_height_field.p)
         h1 = self.height_upper_solid.interpolate(self.quadrature.quad_pt_local_coords - frac_shear)
         self.vapour_liquid.heterogeneous_height = self.contact.gap_height(h1)
+
+    def compute_energy(self, phase: np.ndarray):
+        self.phase_field.sample(phase)
+        [phi_interp, phi_grad] = self.phase_field.apply_operators(
+            [self.phase_field.interpolation, self.phase_field.gradient]
+        )
+        return self.quadrature.integrate2D(self.vapour_liquid.energy_density(phi_interp, phi_grad))
+
+    def compute_volume(self, phase: np.ndarray):
+        self.phase_field.sample(phase)
+        [phi_interp, phi_grad] = self.phase_field.apply_operators(
+            [self.phase_field.interpolation, self.phase_field.gradient]
+        )
+        return self.quadrature.integrate2D(self.vapour_liquid.energy_density(phi_interp, phi_grad))
 
     def formulate_with_constant_volume(
         self,
         liquid_volume: float,
     ):
         def f(x: np.ndarray) -> float:
-            self.phase_field.update_input(x.reshape(self.variable_shape))
-            [phi_interp, phi_grad] = self.phase_field.apply_operators(
-                [self.phase_field.interpolation, self.phase_field.gradient]
-            )
-            return self.quadrature.field_integral(
-                self.vapour_liquid.energy_density(phi_interp, phi_grad)
-            )
+            phi = np.pad(x, 1, mode="constant", constant_values=-1)
+            return self.compute_energy(phi)
 
         self.solver.f = f
 
         def g(x: np.ndarray) -> float:
-            self.phase_field.update_inputte(x.reshape(self.variable_shape))
-            [phi_interp] = self.phase_field.apply_operators([self.phase_field.interpolation])
-            return (
-                self.quadrature.field_integral(self.vapour_liquid.liquid_height(phi_interp))
-                - liquid_volume
-            )
+            phi = np.pad(x, 1, mode="constant", constant_values=-1)
+            return self.compute_volume(phi) - liquid_volume
 
         self.solver.g = g
 
         def l(x: np.ndarray, lam: float, c: float) -> float:
-            self.phase_field.update_input(x.reshape(self.variable_shape))
+            print(f"In l(x), x has datatype {x.dtype}")
+            phi = np.pad(x, 1, mode="constant", constant_values=-1)
+            self.phase_field.sample(phi)
             [phi_interp, phi_grad] = self.phase_field.apply_operators(
                 [self.phase_field.interpolation, self.phase_field.gradient]
             )
-            f = self.quadrature.field_integral(
-                self.vapour_liquid.energy_density(phi_interp, phi_grad)
-            )
+            f = self.quadrature.integrate2D(self.vapour_liquid.energy_density(phi_interp, phi_grad))
             g = (
-                self.quadrature.field_integral(self.vapour_liquid.liquid_height(phi_interp))
+                self.quadrature.integrate2D(self.vapour_liquid.liquid_height(phi_interp))
                 - liquid_volume
             )
-            return f + lam * g + 0.5 * c * g**2
+            val = f + lam * g + 0.5 * c * g**2
+            print(f"In l(x), l has value {val}\n")
+            return val
 
         self.solver.l = l
 
         def dx_l(x: np.ndarray, lam: float, c: float) -> np.ndarray:
-            self.phase_field.update_input(x.reshape(self.variable_shape))
+            print(f"In dl(x), x has datatype {x.dtype}")
+            phi = np.pad(x, 1, mode="constant", constant_values=-1)
+            self.phase_field.sample(phi)
             [phi_interp, phi_grad] = self.phase_field.apply_operators(
                 [self.phase_field.interpolation, self.phase_field.gradient]
             )
@@ -193,14 +198,16 @@ class CapillaryBridge:
                 [self.phase_field.interpolation, self.phase_field.gradient],
             )
             g = (
-                self.quadrature.field_integral(self.vapour_liquid.liquid_height(phi_interp))
+                self.quadrature.integrate2D(self.vapour_liquid.liquid_height(phi_interp))
                 - liquid_volume
             )
             dx_g = self.quadrature.pixel_area * self.phase_field.apply_transposed_to_values(
                 self.vapour_liquid.liquid_height_sensitivity(phi_interp),
                 [self.phase_field.interpolation],
             )
-            return (dx_f + (lam + c * g) * dx_g)[self.grid.coordinator.non_ghost]
+            val = (dx_f + (lam + c * g) * dx_g)[self.grid.coordinator.non_ghost]
+            print(f"In dx_l(x), dx_l has shape {val.shape}, has values\n {val}\n")
+            return val
 
         self.solver.dx_l = dx_l
 
@@ -216,8 +223,8 @@ class CapillaryBridge:
         # inform
         print(f"Simulating for all {len(trajectory)} displacements.")
 
-        # initial guess
-        x = np.ravel(init_guess)
+        # Only non-ghost pixels are decision variables
+        x = init_guess[self.grid.coordinator.non_ghost]
 
         # Simulation
         steps = []
