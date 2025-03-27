@@ -128,16 +128,16 @@ class Coordinator:
             self.decomposition.communicate_ghosts(field.name)
             field.s = np.roll(field.s, np.sign(shift), nb_axes_front + axis)
 
-    def sum(self, field: np.ndarray):
-        """Sum over the region, omitting ghost buffers.
+    # def sum(self, field: np.ndarray):
+    #     """Sum over the region, omitting ghost buffers.
 
-        NOTE: for energy functional, it sums the field defined on quadrature points.
-        Omitting the left ghosts because the pixels are repeated in other subdomains;
-        Omitting the right ghosts because the periodic boundary is not hold for a subdomain,
-        those pixels don't exist in the domain.
-        """
-        local_sum = np.sum(field[self.non_ghost], axis=(-1, -2))
-        return self.communicator.sum(local_sum)
+    #     NOTE: for energy functional, it sums the field defined on quadrature points.
+    #     Omitting the left ghosts because the pixels are repeated in other subdomains;
+    #     Omitting the right ghosts because the periodic boundary is not hold for a subdomain,
+    #     those pixels don't exist in the domain.
+    #     """
+    #     local_sum = np.sum(field[self.non_ghost], axis=(-1, -2))
+    #     return self.communicator.sum(local_sum)
 
     # FIXME: in parallelized code, one shall never explicitly ask for the whole domain.
     # def gather(self, field: np.ndarray):
@@ -219,7 +219,7 @@ class CubicSpline:
         result = np.empty((np.size(local_coords, axis=0), *self.nb_pixels))
         for idx, pt_loc in enumerate(target_pt_locs):
             result[idx] = self.interpolator(tuple(pt_loc))
-        return result
+        return np.expand_dims(result, axis=0)
 
 
 class Quadrature(abc.ABC):
@@ -251,10 +251,11 @@ class Quadrature(abc.ABC):
         self.coordinator = grid.coordinator
         grid.section.pixel_collection.set_nb_sub_pts(self.tag, self.nb_quad_pts)
 
-    def field_integral(self, field: np.ndarray):
+    def integrate2D(self, integrand: np.ndarray):
         # Sum (weighted) over quadrature points
-        quad_sum = np.einsum("cs..., s-> c...", field, self.quad_pt_weights)
-        return self.pixel_area * self.coordinator.sum(quad_sum)
+        pixel_values = np.einsum("csxy, s-> cxy", integrand, self.quad_pt_weights)
+        local_sum = np.sum(pixel_values[self.coordinator.non_ghost], axis=(-1,-2))
+        return self.pixel_area * self.coordinator.communicator.sum(local_sum)
 
 
 class CentroidQuadrature(Quadrature):
@@ -321,14 +322,15 @@ class LinearFiniteElement:
             self.nb_components_input = np.size(data, axis=-3)
         except IndexError:
             self.nb_components_input = 1
-        self.field_input = self.collection.real_field("input", self.nb_components_input)
+        self.field_sample = self.collection.real_field("input", self.nb_components_input)
 
-    def update_input(self, value: np.ndarray):
-        print(f"Value is {value}")
-        self.field_input.p[self.coordinator.non_ghost] = value
+    def sample(self, value: np.ndarray):
+        print(f"In sample, value has shape {value.shape}, has values\n {value}")
+        self.field_sample.p = np.expand_dims(value, axis=0)
         print(f"Communicate ghost")
-        self.coordinator.update(self.field_input)
+        self.coordinator.update(self.field_sample)
         print(f"Finish communicating.")
+        print(f"Now it has values\n {self.field_sample.p.squeeze()}")
 
     def apply_operators(self, operators: list[FieldOp]) -> list[np.ndarray]:
         result = []
@@ -367,7 +369,7 @@ class LinearFiniteElement:
                 nb_sub_pts,
                 nb_operators_interpolation,
             ),
-            self.field_input,
+            self.field_sample,
             self.collection.real_field(
                 "field_interpolation",
                 nb_operators_interpolation * self.nb_components_input,
@@ -396,7 +398,7 @@ class LinearFiniteElement:
                 nb_sub_pts,
                 nb_operators_gradient,
             ),
-            self.field_input,
+            self.field_sample,
             self.collection.real_field(
                 "field_gradient",
                 nb_operators_gradient * self.nb_components_input,
