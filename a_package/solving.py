@@ -13,10 +13,6 @@ import numpy as np
 from NuMPI.Optimization import l_bfgs
 
 
-FlatArray_t: _t.TypeAlias = np.ndarray
-"""By typical convention, the solver internally iterates with a flat array."""
-
-
 @dc.dataclass
 class AugmentedLagrangian:
     tolerance_convergence: float
@@ -27,30 +23,28 @@ class AugmentedLagrangian:
     k_max: int
 
     @staticmethod
-    def f(x: FlatArray_t):
+    def f(x: np.ndarray):
         """To be specified by the simulation. Should return the objective
         function value at x.
         """
         raise NotImplementedError()
 
     @staticmethod
-    def g(x: FlatArray_t):
+    def g(x: np.ndarray):
         """To be specified by the simulation. Should return the constraint
         function value at x.
         """
         raise NotImplementedError()
 
-    # NOTE: define `l` and `dx_l` explicitly to avoid repeated updating of phase-field.
-
     @staticmethod
-    def l(x: FlatArray_t, lam: float, c: float):
+    def l(x: np.ndarray, lam: float, c: float):
         """To be specified by the simulation. Should return values equal to
         f(x) + lam * g(x) + (0.5 * c) * g(x)**2
         """
         raise NotImplementedError()
 
     @staticmethod
-    def dx_l(x: FlatArray_t, lam: float, c: float):
+    def dx_l(x: np.ndarray, lam: float, c: float):
         """To be specified by the simulation. Should return values equal to
         dx_f(x) + lam * dx_g(x) + c * g(x) * dx_g(x)
         """
