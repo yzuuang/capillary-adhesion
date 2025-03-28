@@ -8,66 +8,52 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.modelling import Region, CapillaryBridge
+from a_package.simulating import *
 
 
 show_me_plot = False
 
 
 def test_capillary_bridge_compute_energy_jacobian():
-    L = 10.0
-    N = 10
-    region = Region(L, L, N, N)
+    grid_shape = 10, 10
+    bridge = create_capillary_bridge(grid_shape)
 
-    eta = L / N
-    gamma = 0.2
+    # Determine the lowest step by machine precision
+    lowest_magnitude = math.floor(
+        0.5 * math.log10(sys.float_info.epsilon)
+    )
+    highest_magnitude = 0
+    # All the mini-steps to evaluate the numerical jacobian, for a view of accuracy
+    deltas = np.pow(10.0, np.arange(lowest_magnitude, highest_magnitude + 1))
 
-    xm, ym = np.meshgrid(region.x, region.y)
-    # A ball on top and a flat plate on base
-    h1 = L * np.sqrt(1 - (xm/L - 0.5)**2 - (ym/L - 0.5)**2)
-    h2 = np.zeros_like(h1)
-
-    # A circular phase field
-    phi = np.ones_like(h1)
-    phi[(xm/L)**2 + (ym/L)**2 >= 0.5] = 0.0
-
-    # Some displacement of the top body
-    capi = CapillaryBridge(region, eta, gamma, h1, h2)
-    capi.ix1_iy1 = (1, 2)
-    capi.z1 = 3 * eta
-    capi.update_gap()
-
-    # All the step lengths to be used for finite difference computation
-    lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))  # machine precision determined
-    highest_magnitude = 1
-    deltas = np.pow(10.0, np.arange(lowest_magnitude, highest_magnitude))
-
-    # Compute jacobian numerically (2-order finite difference)
-    numeric_jacobian = np.empty((deltas.size, phi.size))
-    capi.phi = phi
-    for i, delta in enumerate(deltas):
-        for j1, j2 in np.ndindex(phi.shape):
-            phi[j1, j2] += delta
-            capi.update_phase_field()
-            plus_val = capi.inner.compute_energy()
-            phi[j1, j2] -= 2*delta
-            capi.update_phase_field()
-            minus_val = capi.inner.compute_energy()
-            numeric_jacobian[i, j1*region.ny + j2] = (plus_val - minus_val) / delta * 0.5
-
-            phi[j1, j2] += delta
+    # Compute jacobian numerically (central difference)
+    phi: Field2D = bridge.phase_field.field_sample
+    field_shape = np.shape(phi.p)
+    numeric_jacobian = np.empty((deltas.size, *field_shape))
+    for idx_delta, delta in enumerate(deltas):
+        for locs in np.ndindex(field_shape):
+            ref_val = np.copy(phi.p[locs])
+            phi.p[locs] = ref_val + delta
+            plus_val = bridge.compute_energy(phi.p).item()
+            phi.p[locs] = ref_val - delta
+            minus_val = bridge.compute_energy(phi.p).item()
+            numeric_jacobian[idx_delta, *locs] = (plus_val - minus_val) / delta * 0.5
+            phi.p[locs] = ref_val
 
     # Compute jacobian from the implementation
-    capi.update_phase_field()
-    impl_jacobian = capi.inner.compute_energy_jacobian()
+    impl_jacobian = bridge.compute_energy_jacobian(phi.p)
 
     # Measure the difference
     diffs = np.amax(abs(impl_jacobian[np.newaxis, :] - numeric_jacobian), axis=1)
 
     # Plots
     if show_me_plot:
-        plt.plot(deltas, diffs , "x-",
-                 label=r"Difference from a numerical method of $\mathcal{O}(\delta^2)$")
+        plt.plot(
+            deltas,
+            diffs,
+            "x-",
+            label=r"Difference from a numerical method of $\mathcal{O}(\delta^2)$",
+        )
 
         plt.loglog()
         plt.xlabel(r"$\delta$")
@@ -78,4 +64,64 @@ def test_capillary_bridge_compute_energy_jacobian():
 
     # Assertion
     eps = 1e-6
-    assert min(diffs) < eps, f"The difference exceeds the tolerance {eps:.2e}"
+    assert np.amin(diffs) < eps, f"The difference exceeds the tolerance {eps:.2e}"
+
+
+def create_capillary_bridge(grid_shape: list[int]):
+    # Region
+    grid_spacing = 1.0
+    grid = Grid(grid_spacing, grid_shape, len(grid_shape))
+
+    # Upper solid has a sphere surface
+    [x, y] = (grid_spacing * np.arange(nb) for nb in grid.section.nb_pixels)
+    [xm, ym] = np.meshgrid(x, y)
+    [Lx, Ly] = np.array(grid.section.nb_pixels) * grid_spacing
+    R = 2 * min(Lx, Ly)
+    h1 = np.sqrt(R**2 - (xm - 0.5 * Lx) ** 2 - (ym - 0.5 * Ly) ** 2)
+
+    # Lower solid is flat
+    h0 = np.zeros(grid.section.nb_pixels)
+
+    # A phase field
+    phi = np.array(grid.section.nb_pixels)
+
+    # Required model
+    z = 3 * grid_spacing
+    solid_solid = SolidSolidContact(z, h0)
+
+    eta = 1 * grid_spacing
+    gamma = np.cos(np.pi / 3)
+    vapour_liquid = CapillaryVapourLiquid(eta, gamma, solid_solid.gap_height(h1))
+
+
+    # Required numerics
+    height_upper = CubicSpline(grid, h0)
+    height_lower = CubicSpline(grid, h1)
+    phase_field = LinearFiniteElement(grid, phi)
+    quadrature = CentroidQuadrature(grid)
+
+    # The solver for optimization
+    e_conv = 1e-8
+    e_volume = 1e-6
+    max_iter = 3000
+    c0 = 1e-2
+    beta = 3.0
+    k_max = 20
+    solver = AugmentedLagrangian(e_conv, e_volume, max_iter, c0, beta, k_max)
+
+    # Capillary Bridge
+    bridge = CapillaryBridge(
+        grid,
+        solid_solid,
+        height_lower,
+        height_upper,
+        vapour_liquid,
+        phase_field,
+        quadrature,
+        solver,
+    )
+    return bridge
+
+
+if __name__ == "__main__":
+    test_capillary_bridge_compute_energy_jacobian()
