@@ -37,7 +37,7 @@ def test_capillary_bridge_compute_energy_jacobian():
             plus_val = bridge.compute_energy(phi.p).item()
             phi.p[locs] = ref_val - delta
             minus_val = bridge.compute_energy(phi.p).item()
-            numeric_jacobian[idx_delta, *locs] = (plus_val - minus_val) / delta * 0.5
+            numeric_jacobian[(idx_delta, *locs)] = (plus_val - minus_val) / delta * 0.5
             phi.p[locs] = ref_val
 
     # Compute jacobian from the implementation
