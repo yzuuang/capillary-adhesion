@@ -76,7 +76,8 @@ def generate_height_profile(grid: Grid, roughness: SelfAffineRoughness, rng):
     wave_numbers = generate_wave_numbers(grid)
     [_, psd] = roughness.isotropic_spectrum(wave_numbers)
 
-    # <h^2> = <C^2>, take the square root
+    # psd:=h^2(q), <h^2(q)> = <h^2(r)>
+    # psd:=h^2(q), <h^2(q)> = <h^2(r)>
     rms_height = np.sqrt(psd)
 
     # impose some random phase angle
@@ -145,6 +146,16 @@ class CapillaryBridge:
         )
         return self.quadrature.integrate2D(self.vapour_liquid.energy_density(phi_interp, phi_grad))
 
+    def compute_energy_jacobian(self, phase: np.ndarray):
+        self.phase_field.sample(phase)
+        [phi_interp, phi_grad] = self.phase_field.apply_operators(
+            [self.phase_field.interpolation, self.phase_field.gradient]
+        )
+        return self.quadrature.pixel_area * self.phase_field.apply_transposed_to_values(
+            self.vapour_liquid.energy_density_sensitivity(phi_interp, phi_grad),
+            [self.phase_field.interpolation, self.phase_field.gradient],
+        )
+
     def compute_volume(self, phase: np.ndarray):
         self.phase_field.sample(phase)
         [phi_interp, phi_grad] = self.phase_field.apply_operators(
@@ -158,20 +169,20 @@ class CapillaryBridge:
     ):
         def f(x: np.ndarray) -> float:
             phi = np.pad(x, 1, mode="constant", constant_values=-1)
-            return self.compute_energy(phi)
+            return self.compute_energy(np.expand_dims(phi, axis=0))
 
         self.solver.f = f
 
         def g(x: np.ndarray) -> float:
             phi = np.pad(x, 1, mode="constant", constant_values=-1)
-            return self.compute_volume(phi) - liquid_volume
+            return self.compute_volume(np.expand_dims(phi, axis=0)) - liquid_volume
 
         self.solver.g = g
 
         def l(x: np.ndarray, lam: float, c: float) -> float:
             print(f"In l(x), x has datatype {x.dtype}")
             phi = np.pad(x, 1, mode="constant", constant_values=-1)
-            self.phase_field.sample(phi)
+            self.phase_field.sample(np.expand_dims(phi, axis=0))
             [phi_interp, phi_grad] = self.phase_field.apply_operators(
                 [self.phase_field.interpolation, self.phase_field.gradient]
             )
@@ -189,7 +200,7 @@ class CapillaryBridge:
         def dx_l(x: np.ndarray, lam: float, c: float) -> np.ndarray:
             print(f"In dl(x), x has datatype {x.dtype}")
             phi = np.pad(x, 1, mode="constant", constant_values=-1)
-            self.phase_field.sample(phi)
+            self.phase_field.sample(np.expand_dims(phi, axis=0))
             [phi_interp, phi_grad] = self.phase_field.apply_operators(
                 [self.phase_field.interpolation, self.phase_field.gradient]
             )

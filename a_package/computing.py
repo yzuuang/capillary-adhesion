@@ -325,12 +325,8 @@ class LinearFiniteElement:
         self.field_sample = self.collection.real_field("input", self.nb_components_input)
 
     def sample(self, value: np.ndarray):
-        print(f"In sample, value has shape {value.shape}, has values\n {value}")
-        self.field_sample.p = np.expand_dims(value, axis=0)
-        print(f"Communicate ghost")
+        self.field_sample.p = value
         self.coordinator.update(self.field_sample)
-        print(f"Finish communicating.")
-        print(f"Now it has values\n {self.field_sample.p.squeeze()}")
 
     def apply_operators(self, operators: list[FieldOp]) -> list[np.ndarray]:
         result = []
