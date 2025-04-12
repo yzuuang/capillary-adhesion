@@ -26,6 +26,16 @@ def get_capillary_state(pr: ProcessedResult, index: int):
 # TODO: 'plot...' shall return the 'Artist' as the behaviour of 'matplotlib'.
 # TODO: change parameter lists into something like (data, ax, **extra_plot_args)
 
+# Setup for colours
+cmap_height = "plasma"
+cmap_gap = "hot"
+cmap_contact = "Greys"
+cmap_phase_field = "Blues"
+
+color_gas_phase = "w"
+color_liquid_phase = "C0"
+color_solid_phase = "C7"
+
 
 @dc.dataclass
 class DropletData:
@@ -45,11 +55,14 @@ class Record:
     init_guess: np.ndarray
 
 
-eps = 1e-1  # cut off value to decide one phase
+eps = 2e-1  # cut off value to decide one phase
 
 
 def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_water=1-eps):
-    h1 = (data.h1[idx_row,:] + data.r[-1]) / data.eta
+    # Get the data of the cross section at specified row index
+    # FIXME: only shift in x-axis is considered.
+    h1 = np.roll(data.h1[idx_row,:], int(data.r[1]/data.region.dx))
+    h1 = (h1 + data.r[-1]) / data.eta
     h2 = data.h2[idx_row,:] / data.eta
     x = data.region.x / data.eta
 
@@ -58,37 +71,40 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
     h2 = np.append(h2, h2[0])
     x = np.append(x, data.region.lx/data.eta)
 
-    # change penetration to contact
-    at_contact = np.where(h1 < h2)
-    h1[at_contact] = h2[at_contact]
-
     # plot the two plates
     ax.plot(x, h1, "k-")
     ax.plot(x, h2, "k-")
 
-    # highlight the contacting part
-    # TODO: consider when the contact line is composed of multiple curves
-    ax.plot(x[at_contact], h2[at_contact], "r.")
+    # highlight the contacting part (if any)
+    at_contact = np.asanyarray(h1 < h2).nonzero()[0]
+    if np.size(at_contact):
+        i_diff = np.diff(at_contact, prepend=at_contact[0] - 1)
+        i_break = np.hstack((i_diff > 1).nonzero())
+        for contact_part in np.split(at_contact, i_break):
+            ax.fill_between(x[contact_part], h2[contact_part], h1[contact_part], color=color_solid_phase)
 
-    # Get the water phase
+    # highlight the water phase (if any)
     phi = data.phi[idx_row,:]
     water_phase = np.asarray(phi >= value_water).nonzero()[0]
+    if np.size(water_phase):
+        i_diff = np.diff(water_phase, prepend=water_phase[0] - 1)
+        i_break = np.hstack((i_diff > 1).nonzero())
+        for water_drop in np.split(water_phase, i_break):
+            ax.fill_between(x[water_drop], h2[water_drop], h1[water_drop], color=color_liquid_phase)
 
-    # Consider when the water phase is composed of multiple sections
-    i_diff = np.diff(water_phase, prepend=water_phase[0] - 1)
-    i_break = np.hstack((i_diff > 1).nonzero())
+    # Because the hightlight might not necessarily exist, we have to manually create the legend
+    [p_liquid] = ax.fill(np.nan, np.nan, color_liquid_phase, label="Liquid")
+    [p_solid] = ax.fill(np.nan, np.nan, color_solid_phase, label="Solid")
+    ax.legend(handles=[p_liquid, p_solid], loc='upper center', ncol=2)
 
-    # Draw the water phase
-    for water_drop in np.split(water_phase, i_break):
-        ax.fill_between(x[water_drop], h2[water_drop], h1[water_drop], color="C0")
-
+    # No view margin along x-axis.
     ax.set_xlim(x[0], x[-1])
 
 
 def plot_cross_section_phase_field(ax: plt.Axes, data: DropletData, idx_row: int):
     phi = data.phi[idx_row,:]
     x_dimensionless = data.region.x / data.eta
-    ax.plot(x_dimensionless, phi, color='C1')
+    ax.plot(x_dimensionless, phi, color='C0')
 
 
 def plot_height_topography(ax: plt.Axes, data: DropletData):
@@ -96,7 +112,7 @@ def plot_height_topography(ax: plt.Axes, data: DropletData):
     h = data.h1 / data.eta
 
     border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
-    im = ax.imshow(h, cmap="coolwarm", extent=border)
+    im = ax.imshow(h, cmap=cmap_height, extent=border)
 
     return im
 
@@ -108,8 +124,9 @@ def plot_gap_topography(ax: plt.Axes, data: DropletData):
     
     # Set a negative 'vmin' so that the map still looks blue
     vmax = g.max()
-    vmin = -0.4 * vmax
-    im = ax.imshow(g, cmap='Blues', vmin=vmin, vmax=vmax, interpolation='nearest', extent=border)
+    vmin = 0
+    # im = ax.imshow(g, cmap='Blues', vmin=vmin, vmax=vmax, interpolation='nearest', extent=border)
+    im = ax.imshow(g, cmap=cmap_gap, vmin=vmin, vmax=vmax, interpolation='nearest', extent=border)
 
     return im
 
@@ -122,36 +139,37 @@ def plot_contact_topography(ax: plt.Axes, data: DropletData):
     contact = contact / data.eta
     border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
 
-    im = ax.imshow(contact, cmap='Blues', vmin=0, vmax=1, interpolation='nearest', extent=border)
+    im = ax.imshow(contact, cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4, interpolation='nearest', extent=border)
     return im
 
 
 def plot_liquid_topography(ax: plt.Axes, data:DropletData):
     liquid = np.ma.masked_where(data.phi <= 1-eps, data.phi)
+    # liquid = data.phi
     border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
-    im = ax.imshow(liquid, cmap="Reds", vmin=0, vmax=2, alpha=0.5, extent=border)
+    # im = ax.imshow(liquid, cmap="Reds", vmin=0, vmax=2, alpha=0.5, extent=border)
+    im = ax.imshow(liquid, cmap=cmap_phase_field, vmin=0, vmax=1.5, alpha=0.8, interpolation='nearest', extent=border)
     return im
 
 
 def plot_phase_field_topography(ax: plt.Axes, data: DropletData):
-    g = data.g
     phi = data.phi
     # NOTE: the value 2.0 is for solid phase, while that of the water / vapor phase is 1.0 / 0.0 respectively.
     # these values are to match the color in the "afmhot" colormap.
     # value_contact = 2.0
     # phi[g <= 0] = value_contact
     border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
-    im = ax.imshow(phi, interpolation='nearest', vmin=0, vmax=2, cmap='afmhot', extent=border)
+    im = ax.imshow(phi, vmin=0, vmax=2, cmap='Blues', interpolation='nearest', extent=border)
     return im
 
 
 def plot_interface_topography(ax: plt.Axes, data:DropletData):
     dphi = np.gradient(data.phi)
-    edge = sum(dphi_i**2 for dphi_i in dphi) > 1e-3
+    edge = sum(dphi_i**2 for dphi_i in dphi) > 1e-6
     interface = np.where(edge, data.phi, 0)
     # NOTE: hard-coded pixel size 0.1
     border = np.array([0, data.region.lx, 0, data.region.ly]) / 1e-1
-    im = ax.imshow(interface, cmap="afmhot", vmin=0.0, vmax=2.0, interpolation='nearest', extent=border)
+    im = ax.imshow(interface, cmap="binary", vmin=0.0, vmax=None, interpolation='nearest', extent=border)
     return im
 
 
@@ -160,7 +178,7 @@ def plot_combined_topography(ax: plt.Axes, data: DropletData):
     im2 = plot_contact_topography(ax, data)
     # im3 = plot_interface_topography(ax, data)
     im4 = plot_liquid_topography(ax, data)
-    return im1, im2, im4
+    # return im1, im2, im4
 
 
 def demonstrate_dynamics(ax: plt.Axes, many_data: list[DropletData]):
@@ -178,9 +196,10 @@ def plot_gibbs_free_energy(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
 
     # Get the first few data points
     E = pr.evolution.E[:n_step]
-    p = pr.evolution.p[:n_step]
-    V = pr.evolution.V[:n_step]
-    G = E - p * V
+    # p = pr.evolution.p[:n_step]
+    # V = pr.evolution.V[:n_step]
+    # G = E - p * V
+    G = E
 
     # Non-dimensionalize
     eta = pr.modelling.eta
@@ -191,7 +210,7 @@ def plot_gibbs_free_energy(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     ax.plot(steps, G, color="C1", linestyle="-", marker="x", ms=5, mfc="none", label=r"$G$")
 
     # Format the plot
-    ax.legend(loc='lower left')
+    ax.legend(loc='upper right')
     ax.grid()
 
 
@@ -229,11 +248,11 @@ def plot_normal_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     f = f / eta  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
-    steps = np.linspace(0, 1, n_step)
+    steps = np.arange(n_step)
     ax.plot(steps, f[:,2], color="b", linestyle="-", marker="o", ms=3, mfc="none", label=r"$F_z$")
 
     # Format the plot
-    ax.legend(loc='upper left')
+    ax.legend(loc='upper right')
     ax.grid()
 
 
@@ -255,7 +274,7 @@ def plot_shear_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     ax.plot(steps, f[:,1], color="g", linestyle="--", marker="^", ms=5, mfc="none", label=r"$F_y$")
 
     # Format the plot
-    ax.legend(loc='lower left')
+    ax.legend(loc='upper right')
     ax.grid()
 
 
@@ -280,7 +299,7 @@ def plot_force_curves(ax: plt.Axes, pr: ProcessedResult, idx_stop: int=None):
     [l3] = ax.plot(r, f[:,2], color="b", linestyle=":", marker="x", mfc="none", label=r"$f_z$")
 
     # Format the plot
-    ax.legend(loc='lower left')
+    ax.legend(loc='upper right')
     ax.grid()
 
     return l1, l2, l3
@@ -307,9 +326,8 @@ def hide_ticks(ax: plt.Axes):
 # TO ORGANIZE: The following functions do not have an `ax` parameter, should be organized differently?
 def latexify_plot(font_size: int):
     params = {
-        'text.latex.preamble': r"\usepackage{gensymb} \usepackage{amsmath}",
-        'text.usetex': False,  # use_tex = True if os.system('which latex') else False
-        'font.family': 'serif',
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['helvetica'],
         # 'font.size': font_size,
         'axes.labelsize': font_size,
         'axes.titlesize': font_size,
