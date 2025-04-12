@@ -77,7 +77,7 @@ class CapillaryBridge:
     """
     region: Region
     eta: float
-    beta: float  # surface tensions: (SL - SG) / LG
+    gamma: float  # surface tensions: (SL - SG) / LG
     h1: np.ndarray
     h2: np.ndarray
     ix1_iy1: tuple[int, int] = None
@@ -91,7 +91,7 @@ class CapillaryBridge:
             self.ix1_iy1 = (0, 0)
         h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
         self.interp_h1 = Bicubic(h1_origin, periodic=True)
-        self.inner = ComputeCapillary(self.region, self.eta, self.beta)
+        self.inner = ComputeCapillary(self.region, self.eta, self.gamma)
 
     def update_gap(self):
         # Lateral displacement of the solid top
