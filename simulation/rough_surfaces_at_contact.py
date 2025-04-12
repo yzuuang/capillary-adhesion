@@ -14,21 +14,21 @@ rng = random.default_rng(seed)
 
 if __name__ == "__main__":
     # modelling parameters
-    a = 1e-1        # pixel size
+    a = 1.0         # pixel size
     N = 128         # num of nodes along one axis
     L = N * a       # lateral size
-    V = L**2 * a    # volume of the droplet
+    V = L**2 * a * 1.5    # volume of the droplet
 
-    eta = 0.01      # scaling interface width
-    gamma = 0.5     # surface tensions: (SL - SG) / LG
+    eta = a       # scaling interface width
+    gamma = -0.5     # surface tensions: (SL - SG) / LG
 
     # the region where simulation runs
     region = Region(L, L, N, N)
 
     # generate rough plates
-    C0 = 1e6  # prefactor
-    qR = 2e0  # roll-off
-    qS = 2e1  # cut-off
+    C0 = 1e5  # prefactor
+    qR = (2*np.pi/L) * 5  # roll-off
+    qS = (2*np.pi/L) * 50  # cut-off
     H = 0.95  # Hurst exponent
     roughness = SelfAffineRoughness(C0, qR, qS, H)
     q_2D = wavevector_norm(region.qx, region.qy)
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     h2 = PSD_to_height(C_2D, rng=rng)
 
     # combine into the model object
-    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1.5*a)
+    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1*a)
     capi.update_gap()
 
     # Check the preset volume
@@ -71,9 +71,9 @@ if __name__ == "__main__":
     phi = rng.random((N, N))
 
     # run simulation routine
-    d_max = 2 * a
-    d_min = 1.5 * a
-    d_step = 0.01 * a
+    d_max = 5 * a
+    d_min = 1 * a
+    d_step = 0.1 * a
 
     path = __file__.replace(".py", ".data")
     with working_directory(path, read_only=False) as store:

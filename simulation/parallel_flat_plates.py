@@ -41,7 +41,7 @@ if __name__ == '__main__':
     # run simulation routine
     d_min = 2 * eta
     d_max = 3 * eta
-    d_step = 0.05 * eta
+    d_step = 0.5 * eta
     path = __file__.replace(".py", ".data")
     with working_directory(path, read_only=False) as store:
         store.brand_new()

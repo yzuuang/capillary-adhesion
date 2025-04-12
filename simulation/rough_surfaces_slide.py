@@ -14,19 +14,21 @@ rng = random.default_rng(seed)
 
 if __name__ == "__main__":
     # modelling parameters
-    eta = 1e-1      # interface width
-    gamma = 5e-1    # surface tensions: (SL - SG) / LG
+    a = 1.0         # pixel size
     N = 128         # num of nodes along one axis
-    L = N * eta     # lateral size
-    V = L**2 * (0.5*eta)  # volume of the droplet
+    L = N * a       # lateral size
+    V = L**2 * a * 1.5    # volume of the droplet
+
+    eta = a       # scaling interface width
+    gamma = 0.5     # surface tensions: (SL - SG) / LG
 
     # the region where simulation runs
     region = Region(L, L, N, N)
 
     # generate rough plates
-    C0 = 1e6  # prefactor
-    qR = 2e0  # roll-off
-    qS = 2e1  # cut-off
+    C0 = 1e5  # prefactor
+    qR = (2*np.pi/L) * 5  # roll-off
+    qS = (2*np.pi/L) * 50  # cut-off
     H = 0.95  # Hurst exponent
     roughness = SelfAffineRoughness(C0, qR, qS, H)
     q_2D = wavevector_norm(region.qx, region.qy)
@@ -35,7 +37,7 @@ if __name__ == "__main__":
     h2 = PSD_to_height(C_2D, rng=rng)
 
     # combine into the model object
-    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1*eta)
+    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1.5*eta)
     capi.update_gap()
 
     # Check the preset volume
@@ -70,7 +72,7 @@ if __name__ == "__main__":
 
     # run simulation routine
     n_pixel_to_slide = N
-    n_step_per_pixel = 10
+    n_step_per_pixel = 2
     n_step = n_step_per_pixel * n_pixel_to_slide
     l_step = 1 / n_step_per_pixel
     m_track = np.column_stack((np.arange(n_step)*l_step, np.zeros(n_step)))
