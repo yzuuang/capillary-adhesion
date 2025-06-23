@@ -196,10 +196,9 @@ def plot_gibbs_free_energy(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
 
     # Get the first few data points
     E = pr.evolution.E[:n_step]
-    # p = pr.evolution.p[:n_step]
-    # V = pr.evolution.V[:n_step]
-    # G = E - p * V
-    G = E
+    p = pr.evolution.p[:n_step]
+    V = pr.evolution.V[:n_step]
+    G = E - p * V
 
     # Non-dimensionalize
     eta = pr.modelling.eta

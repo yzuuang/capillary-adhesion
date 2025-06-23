@@ -16,6 +16,7 @@ from a_package.solving import NumOptEq
 @dc.dataclass
 class Region:
     """A discrete space in 2D."""
+
     lx: float
     ly: float
     nx: int
@@ -37,7 +38,7 @@ def wavevector_norm(*q):
     # from N-axis to N-component of coordinates
     q_mesh = np.meshgrid(*q)
     # coordinates to norms
-    return np.sqrt(sum(q_i ** 2 for q_i in q_mesh))
+    return np.sqrt(sum(q_i**2 for q_i in q_mesh))
 
 
 @dc.dataclass
@@ -75,13 +76,14 @@ class CapillaryBridge:
     Data attributes: field is stored with nodal values as 2D array.
     1 refer to the solid top; 2 refer to the solid base.
     """
+
     region: Region
     eta: float
     gamma: float  # surface tensions: (SL - SG) / LG
     h1: np.ndarray
     h2: np.ndarray
     ix1_iy1: tuple[int, int] = None
-    z1: float = 0.
+    z1: float = 0.0
     g: np.ndarray = None
     no_gap: np.ndarray = None
     phi: np.ndarray = None
@@ -89,14 +91,19 @@ class CapillaryBridge:
     def __post_init__(self):
         if self.ix1_iy1 is None:
             self.ix1_iy1 = (0, 0)
-        h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
+        h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0, 1))
         self.interp_h1 = Bicubic(h1_origin, periodic=True)
         self.inner = ComputeCapillary(self.region, self.eta, self.gamma)
 
     def update_gap(self):
         # Lateral displacement of the solid top
         # NOTE: assume periodic boundary
-        self.h1 = self.interp_h1(self.region.xm - self.ix1_iy1[0], self.region.ym - self.ix1_iy1[1])
+        # self.h1 = self.interp_h1(
+        #     (self.region.xm - self.ix1_iy1[0] * self.region.dx) / self.region.lx,
+        #     (self.region.ym - self.ix1_iy1[1] * self.region.dy) / self.region.ly,
+        # )
+        # print(np.shape(self.h1))
+        # print(np.shape(self.h2))
         # Gap
         self.g = self.h1 + self.z1 - self.h2
 
@@ -117,11 +124,9 @@ class CapillaryBridge:
 
     @property
     def displacement(self):
-        return np.array([
-            self.ix1_iy1[0] * self.region.dx,
-            self.ix1_iy1[1] * self.region.dy,
-            self.z1
-        ])
+        return np.array(
+            [self.ix1_iy1[0] * self.region.dx, self.ix1_iy1[1] * self.region.dy, self.z1]
+        )
 
     @property
     def volume(self):
@@ -173,10 +178,10 @@ class CapillaryBridge:
 
 class ComputeCapillary:
     """Inner class
-    
+
     Data attributes: field is stored with values of elements as 1D array (fast computation).
 
-    Methods: most are computation that will be used for optimization. 
+    Methods: most are computation that will be used for optimization.
     Integral of double well potential is evaluated via a centroid rule of Quadrature for triangles.
     """
 
@@ -202,7 +207,7 @@ class ComputeCapillary:
 
         # Highest polynomial degree for computation
         poly_degr = 4
-        # The phase-field and its powers; each stored as a column of a 2D array. 
+        # The phase-field and its powers; each stored as a column of a 2D array.
         self.phi_powers = np.empty((poly_degr, n_element))
         """    
             Index  0 -- phi, set with 'update_phase_field';
@@ -217,7 +222,7 @@ class ComputeCapillary:
         # Number of quadrature points per triangle element
         # n_quadrature = 1
         # NOTE: Though 1 quadrature point at the centroid can only approximates an integral of
-        # a 4th oder polynomial, it seems sufficient to yield a solution in numerical experiments. 
+        # a 4th oder polynomial, it seems sufficient to yield a solution in numerical experiments.
         # weight = np.ones((1, n_quadrature * n_elem), dtype=float)
 
     def update_gap(self, h1: np.ndarray, h2: np.ndarray, g: np.ndarray):
@@ -226,7 +231,8 @@ class ComputeCapillary:
         h2 --- nodal value, flat.
         g --- nodal value, flat.
         """
-
+    
+        self.delta = h1.mean() - h2.mean()
         self.g = self.map.K_centroid @ g
         self.dg_dx = self.map.Dx @ g
         self.dg_dy = self.map.Dy @ g
@@ -267,9 +273,11 @@ class ComputeCapillary:
 
         # compute water-vapour surface area
         # compute at quadrature points: (1/eta) (phi^2 - 2 phi^3 + phi^4)
-        double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
+        double_well = (1 / self.eta) * (
+            self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3]
+        )
         # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
-        perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
+        perimeter = self.eta * (self.dphi_dx**2 + self.dphi_dy**2)
         area_water_vapour = (double_well + perimeter) * self.g
 
         # if self.no_gamma:
@@ -289,10 +297,12 @@ class ComputeCapillary:
 
         # the common part of 3 components
         # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
-        perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
+        perimeter = self.eta * (self.dphi_dx**2 + self.dphi_dy**2)
         # compute at quadrature points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
-        double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
-        de_dg = (double_well + perimeter)
+        double_well = (1 / self.eta) * (
+            self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3]
+        )
+        de_dg = double_well + perimeter
 
         # the different part of 3 components
         f_x = (de_dg * self.dg_dx).sum()
@@ -313,14 +323,18 @@ class ComputeCapillary:
         # update necessary power terms
         self.phi_powers[1] = self.phi_powers[0] ** 2
         self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
-        
+
         # Contribution of water-vapour surface
         # constant within the element: 2 eta g (Dx phi Dx + Dy phi Dy)
-        perimeter_jacobian = (2 * self.eta) * ((self.g * self.dphi_dx) @ self.map.Dx + 
-                                               (self.g * self.dphi_dy) @ self.map.Dy)
+        perimeter_jacobian = (2 * self.eta) * (
+            (self.g * self.dphi_dx) @ self.map.Dx + (self.g * self.dphi_dy) @ self.map.Dy
+        )
         # compute at quadrature points: (2/eta) g (phi - 3 phi^2 + phi^3)
-        double_well_jacobian = (2 / self.eta) * ((self.phi_powers[0] - 3 * self.phi_powers[1] +
-                                                  2 * self.phi_powers[2]) * self.g) @ self.map.K_centroid
+        double_well_jacobian = (
+            (2 / self.eta)
+            * ((self.phi_powers[0] - 3 * self.phi_powers[1] + 2 * self.phi_powers[2]) * self.g)
+            @ self.map.K_centroid
+        )
 
         # area of water-vapour interface
         area_water_vapour_jacobian = double_well_jacobian + perimeter_jacobian
@@ -331,7 +345,9 @@ class ComputeCapillary:
         # Contribution of water-solid surface
         area_water_solid_jacobian = self.solid_surface @ self.map.K_centroid
 
-        return (area_water_vapour_jacobian + self.gamma * area_water_solid_jacobian) * self.element_area
+        return (
+            area_water_vapour_jacobian + self.gamma * area_water_solid_jacobian
+        ) * self.element_area
 
     def compute_volume(self) -> float:
         return (self.g * self.phi_powers[0]).sum() * self.element_area
@@ -342,11 +358,12 @@ class ComputeCapillary:
 
 class FirstOrderElement:
     """
-    Create matrices that maps a vector of nodal values into a vector of values of interest in finite elements. 
+    Create matrices that maps a vector of nodal values into a vector of values of interest in finite elements.
 
-    Field is interpolated by triangular linear finite elements: 'a + b*xi + c*eta', with 'a' located at the 
+    Field is interpolated by triangular linear finite elements: 'a + b*xi + c*eta', with 'a' located at the
     centroid. Gradient values are thus constant: '(b / dx, c / dy)'.
     """
+
     K_centroid: np.ndarray
     Dx: np.ndarray
     Dy: np.ndarray
@@ -403,7 +420,9 @@ def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
     mat[i, (i + j) % N] = val
 
 
-def fill_cyclic_diagonal_2d(mat: sparse.spmatrix, j: tuple[int, int], N: tuple[int, int], val: float):
+def fill_cyclic_diagonal_2d(
+    mat: sparse.spmatrix, j: tuple[int, int], N: tuple[int, int], val: float
+):
     """Fill cyclically, element-wise in the j-th diagonal of a matrix.
     The matrix represents a mapping from 2D data to 2D data.
     However, the 2d array is ravelled into 1D array for efficiency.
@@ -421,11 +440,10 @@ def fill_cyclic_diagonal_2d(mat: sparse.spmatrix, j: tuple[int, int], N: tuple[i
 
 
 def fill_vertical_block_diagonal(mat: sparse.spmatrix, N: int, val: list[float]):
-    """Fill cyclically, block-wise in the diagonal of a matrix.
-    """
+    """Fill cyclically, block-wise in the diagonal of a matrix."""
     assert mat.ndim == 2
 
     # cartesian product of range(N1) and range(N2)
     m = len(val)
     for i in range(N):
-        mat[m * i:m * (i + 1), i] = val
+        mat[m * i : m * (i + 1), i] = val
