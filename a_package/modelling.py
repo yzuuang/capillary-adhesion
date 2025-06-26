@@ -118,7 +118,7 @@ class CapillaryVapourLiquid:
             * self.square_penalty_derivatie(d_phi)
         )
 
-        return energy_density_sens_phi, energy_density_sens_d_phi
+        return [energy_density_sens_phi, energy_density_sens_d_phi]
 
     @staticmethod
     def double_well_penalty_derivative(x):
@@ -132,7 +132,7 @@ class CapillaryVapourLiquid:
         return self.heterogeneous_height * phi
 
     def liquid_height_sensitivity(self, phi: Components_t):
-        return (self.heterogeneous_height, )
+        return [self.heterogeneous_height]
 
     def adhesive_force(self, phi: Components_t, d_phi: Components_t):
         return (
