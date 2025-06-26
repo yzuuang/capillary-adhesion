@@ -75,14 +75,18 @@ class Field:
 class Grid:
     """A regular grid with periodic boundaries and is parallelized."""
 
-    spacing: float
+    length: list[float]
     nb_pixels: list[int]
     nb_subdivisions: list[int] = dc.field(default_factory=lambda: [])
     nb_ghost_layers: list[int] = dc.field(default_factory=lambda: [])
 
     @property
     def nb_dims(self):
-        return len(self.nb_pixels)
+        return len(self.length)
+    
+    @property
+    def spacing(self):
+        return [l/nb for (l, nb) in zip (self.length, self.nb_pixels)]
 
     def __post_init__(self):
         # A "world" communicator with or without MPI
@@ -102,6 +106,9 @@ class Grid:
             self.nb_ghost_layers = [1] * self.nb_dims
 
         # Value check
+        assert (
+            len(self.nb_pixels) == self.nb_dims
+        ), f"Dimension incompatible. Your field is {self.nb_dims}D. But you specify a {len(self.nb_subdivisions)}D pixels."
         assert (
             len(self.nb_subdivisions) == self.nb_dims
         ), f"Dimension incompatible. Your field is {self.nb_dims}D. But you specify a {len(self.nb_subdivisions)}D subdivisions."
@@ -211,8 +218,8 @@ class Quadrature(abc.ABC):
         """Weights of each quadrature points. The sum weights shall equal to one."""
 
     def __init__(self, grid: Grid):
-        self.pixel_size = grid.spacing
-        self.pixel_area = grid.spacing**2
+        self.pixel_size = grid.length
+        self.pixel_area = grid.length**2
         self.coordinator = grid.coordinator
         grid.section.pixel_collection.set_nb_sub_pts(self.tag, self.nb_quad_pts)
 

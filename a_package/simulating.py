@@ -63,7 +63,7 @@ def get_rng(grid: Grid, seed: _t.Optional[int]):
 def generate_wave_numbers(grid: Grid):
     # Wave number axes
     wave_numbers_in_each_dim = (
-        (2 * np.pi) * fft.fftfreq(n, d=grid.spacing) for n in grid.nb_pixels
+        (2 * np.pi) * fft.fftfreq(n, d=l) for n, l in zip(grid.nb_pixels, grid.spacing)
     )
     # Wave number grids
     wave_numbers_in_each_dim = np.meshgrid(*wave_numbers_in_each_dim)
@@ -126,7 +126,7 @@ class CapillaryBridge:
         frac_shear = np.empty(2)
         for axis, value in enumerate([x, y]):
             # Normaliz such that grid_spacing == 1.0
-            [frac, nb_pixels] = math.modf(value / self.grid.spacing)
+            [frac, nb_pixels] = math.modf(value / self.grid.spacing[axis])
             if nb_pixels >= 1.0:
                 self.region.roll(
                     self.rolling_height_field,
