@@ -14,66 +14,8 @@ import muGrid
 from scipy.interpolate import RegularGridInterpolator
 
 
-@dc.dataclass(init=True)
-class Grid:
-    """A regular grid with periodic boundaries and is parallelized."""
-
-    spacing: float
-    nb_pixels: list[int]
-    divising_dims: int
-
-    def __post_init__(self):
-        # A "unified" communicator with or without MPI
-        try:
-            from mpi4py import MPI
-
-            communicator = muGrid.Communicator(MPI.COMM_WORLD)
-        except ImportError:
-            print("INFO: MPI is not installed, using stub implementation.")
-            communicator = muGrid.Communicator()
-
-        # Decompose the domain
-        # FIXME: it doesn't garauntee all processes have a section. Maybe should fix in muGrid.
-        nb_subdivisions = max_integer_combo(communicator.size, self.divising_dims)
-        nb_ghosts_left = [1] * self.divising_dims
-        nb_ghosts_right = [1] * self.divising_dims
-        decomposition = muGrid.CartesianDecomposition(
-            communicator, self.nb_pixels, nb_subdivisions, nb_ghosts_left, nb_ghosts_right
-        )
-
-        # One object for things that should be handled by each process itself
-        self.section = Section(
-            decomposition.collection,
-            decomposition.nb_subdomain_grid_pts,
-            decomposition.global_coords,
-            # FIXME: is this a general problem of muGrid periodic boundary in parallel?
-            [
-                n - l - r
-                for (n, l, r) in zip(
-                    decomposition.nb_subdomain_grid_pts, nb_ghosts_left, nb_ghosts_right
-                )
-            ],
-        )
-
-        # One object for things that require cooperation of processes
-        self.coordinator = Coordinator(communicator, decomposition, nb_ghosts_left, nb_ghosts_right)
-        """NOTE: Although decomposition has a different communicator, it is created by calling 
-        MPI_Cart_create with reoder=false. The ranks of processes in two communicators are the same.
-        """
-
-
-def max_integer_combo(value: int, nb_ints: int):
-    """Find the maximal combination of nb_ints integers whose product is less or equal to value."""
-    nb_subdivisions = []
-    for root_degree in range(nb_ints, 0, -1):
-        max_divisor = int(value ** (1 / root_degree))
-        nb_subdivisions.append(max_divisor)
-        value //= max_divisor
-    return nb_subdivisions
-
-
-class Field2D(_t.Protocol):
-    """Some type hints for muGrid Field."""
+class muGridField_t(_t.Protocol):
+    """Type hints to muGrid Field. For the ease of coding."""
 
     @property
     def name(self) -> str:
@@ -84,102 +26,125 @@ class Field2D(_t.Protocol):
         """The number of components of the field quantity."""
 
     @property
-    def p(self) -> np.ndarray[tuple[int, int, int], np.dtype]:
+    def p(self) -> np.ndarray[tuple[int, ...], np.dtype]:
         """Quantity values on the field, with #components and #sub-pts ravelled together."""
 
     @property
-    def s(self) -> np.ndarray[tuple[int, int, int, int], np.dtype]:
+    def s(self) -> np.ndarray[tuple[int, ...], np.dtype]:
         """Quantity values on the field, with #components and #sub-pts exposed."""
 
 
-@dc.dataclass(init=True)
-class Coordinator:
-    """It is aware that a domain is deomposed of several subdomains. So it must distinguish whether
-    pixels are ghost-buffers.
-    """
+# Forward declaration
+class Grid:
+    pass
 
-    communicator: muGrid.Communicator
-    decomposition: muGrid.CartesianDecomposition
-    nb_ghosts_left: list[int]
-    nb_ghosts_right: list[int]
+
+class Field:
+    """A field that coordinates with other sections."""
+
+    def __init__(self, section: muGridField_t, grid: Grid):
+        self._section = section
+        self._grid = grid
 
     @property
-    def non_ghost(self):
-        """Indexing slices to exclude ghost buffers"""
-        return (
-            Ellipsis,
-            *tuple(
-                slice(nb_l, -nb_r)
-                for (nb_l, nb_r) in zip(self.nb_ghosts_left, self.nb_ghosts_right)
-            ),
-        )
+    def data(self):
+        return self._section.s
 
-    def update(self, field: Field2D):
-        """Update the field. Fill valeus to ghost buffers."""
-        self.decomposition.communicate_ghosts(field.name)
+    @data.setter
+    def data(self, value):
+        self._section.s = value
+        self._grid.communicate_ghosts(self._section)
 
-    def roll(self, field: Field2D, shift: int, axis: int):
-        """Roll the field values.
+    def sum(self):
+        """Sum up values of all locations. While maintain components and subpoints.z"""
+        # Spatial dimensions are the last two axes
+        return self._grid.sum(np.sum(self._section.s, axis=(-2, -1)))
 
-        This is a speical implementation for nb_ghosts_left = nb_ghosts_right = [1, 1]
-        """
-        nb_axes_front = 2
+    def roll(self, shift: int, axis: int):
+        """Roll the field values."""
+        # Two axes before the spatial dimensions: nb_components, nb_sub_pts
+        nb_frontal_axes = 2
+
+        # Roll it one layer per time, as there is only one layer of ghosts
         for _ in range(shift):
-            self.decomposition.communicate_ghosts(field.name)
-            field.s = np.roll(field.s, np.sign(shift), nb_axes_front + axis)
-
-    # def sum(self, field: np.ndarray):
-    #     """Sum over the region, omitting ghost buffers.
-
-    #     NOTE: for energy functional, it sums the field defined on quadrature points.
-    #     Omitting the left ghosts because the pixels are repeated in other subdomains;
-    #     Omitting the right ghosts because the periodic boundary is not hold for a subdomain,
-    #     those pixels don't exist in the domain.
-    #     """
-    #     local_sum = np.sum(field[self.non_ghost], axis=(-1, -2))
-    #     return self.communicator.sum(local_sum)
-
-    # FIXME: in parallelized code, one shall never explicitly ask for the whole domain.
-    # def gather(self, field: np.ndarray):
-    #     """Gather over the region, omitting ghost buffers.
-
-    #     NOTE: for phase field, it gathers the nodal field. It is obvious to omit all ghosts.
-
-    #     NOTE: for the jacobian of the energy functional, it gathers the nodal field.
-    #     Omitting both left and right ghosts because the rest nodes are "self-contained"
-    #     inside the subdomain, that is, the contribution from quadrature points to nodal
-    #     points is completely computed. (A counter example is at the left ghosts, these
-    #     nodes has the contribution from quadrature points located in the pixels inside
-    #     this subdomain, but not the ones located in the pixels of the neighbouring subdomain.)
-    #     """
-    #     contiguous_copy = np.copy(np.squeeze(field[..., *self.non_ghost]), order='F')
-    #     print("GATHER", contiguous_copy.flags)
-    #     return communicator.gather(contiguous_copy)
+            self._section.s = np.roll(self._section.s, np.sign(shift), nb_frontal_axes + axis)
+            self._grid.communicate_ghosts(self._section)
 
 
 @dc.dataclass(init=True)
-class Section:
-    """It views itself merely as a collection of pixels. So it treats all pixels the same."""
+class Grid:
+    """A regular grid with periodic boundaries and is parallelized."""
 
-    pixel_collection: muGrid.GlobalFieldCollection
+    spacing: float
     nb_pixels: list[int]
-    global_coords: np.ndarray
-    nb_effective_pixels: list[int]
+    nb_subdivisions: list[int] = dc.field(default_factory=lambda: [])
+    nb_ghost_layers: list[int] = dc.field(default_factory=lambda: [])
 
-    # def set_nb_sub_pts(self, *args):
-    #     """
-    #     - tag: str
-    #     - nb_sub_pts: int
-    #     """
-    #     self.pixel_collection.set_nb_sub_pts(*args)
+    @property
+    def nb_dims(self):
+        return len(self.nb_pixels)
 
-    # def real_field(self, *args) -> Field2D:
-    #     """
-    #     - unique_name: str
-    #     - nb_components: int
-    #     - sub_pt_tag: str = "pixel"
-    #     """
-    #     return self.pixel_collection.real_field(*args)
+    def __post_init__(self):
+        # A "world" communicator with or without MPI
+        try:
+            from mpi4py import MPI
+
+            self._communicator = muGrid.Communicator(MPI.COMM_WORLD)
+        except ImportError:
+            print("INFO: MPI is not installed, using stub implementation.")
+            self._communicator = muGrid.Communicator()
+
+        # Default values
+        if len(self.nb_subdivisions) == 0:
+            self.nb_subdivisions = factorize_closest(self._communicator.size, self.nb_dims)
+
+        if len(self.nb_ghost_layers) == 0:
+            self.nb_ghost_layers = [1] * self.nb_dims
+
+        # Value check
+        assert (
+            len(self.nb_subdivisions) == self.nb_dims
+        ), f"Dimension incompatible. Your field is {self.nb_dims}D. But you specify a {len(self.nb_subdivisions)}D subdivisions."
+        assert (
+            np.multiply.reduce(self.nb_subdivisions) <= self._communicator.size
+        ), f"Too many subdivisions. Only {self._communicator.size} nodes are available."
+        assert (
+            len(self.nb_ghost_layers) == self.nb_dims
+        ), f"Dimension incompatible. Your field is {self.nb_dims}D. But you specify a {len(self.nb_subdivisions)}D ghost layers"
+
+        # Domain decomposition
+        self._decomposition = muGrid.CartesianDecomposition(
+            self._communicator,
+            self.nb_pixels,
+            self.nb_subdivisions,
+            self.nb_ghost_layers,
+            self.nb_ghost_layers,
+        )
+
+        # Field manager
+        self._field_collection: muGrid.GlobalFieldCollection = self._decomposition.collection
+
+    def add_sub_pt_scheme(self, tag: str, nb_sub_pts: int):
+        self._field_collection.set_nb_sub_pts(tag, nb_sub_pts)
+
+    def real_field(self, name: str, nb_components: int, sub_pts_tag: str):
+        return Field(self._field_collection.real_field(name, nb_components, sub_pts_tag), self)
+
+    def communicate_ghosts(self, field: muGridField_t):
+        self._decomposition.communicate_ghosts(field)
+
+    def sum(self, value: _t.Union[int, float, np.ndarray]):
+        return self._communicator.sum(value)
+
+
+def factorize_closest(value: int, nb_ints: int):
+    """Find the maximal combination of nb_ints integers whose product is less or equal to value."""
+    nb_subdivisions = []
+    for root_degree in range(nb_ints, 0, -1):
+        max_divisor = int(value ** (1 / root_degree))
+        nb_subdivisions.append(max_divisor)
+        value //= max_divisor
+    return nb_subdivisions
 
 
 class CubicSpline:
@@ -192,7 +157,7 @@ class CubicSpline:
 
     def __init__(self, grid: Grid, data: np.ndarray):
         self.nb_pixels = grid.section.nb_pixels
-        # Due to periodic boundary, there is one more "hidden" grid point in the end, so plus 1 
+        # Due to periodic boundary, there is one more "hidden" grid point in the end, so plus 1
         # for axes in sampling data
         self.axis_pt_locs = tuple(np.arange(nb_pts + 1) for nb_pts in self.nb_pixels)
         # But we don't explicitly save the value at the end, so no plus 1 for grid in interpolation
@@ -254,8 +219,9 @@ class Quadrature(abc.ABC):
     def integrate2D(self, integrand: np.ndarray):
         # Sum (weighted) over quadrature points
         pixel_values = np.einsum("csxy, s-> cxy", integrand, self.quad_pt_weights)
-        local_sum = np.sum(pixel_values[self.coordinator.non_ghost], axis=(-1,-2))
+        local_sum = np.sum(pixel_values[self.coordinator.non_ghost], axis=(-1, -2))
         return self.pixel_area * self.coordinator.communicator.sum(local_sum)
+
 
 
 class CentroidQuadrature(Quadrature):
@@ -280,29 +246,32 @@ class CentroidQuadrature(Quadrature):
         return np.array([0.5] * 2)
 
 
+class ConvolutionOperator:
+    pass
+
 @dc.dataclass(init=True)
 class FieldOp:
     """Ad-hoc the ConvolutionOperator with more attributes."""
 
     op: muGrid.ConvolutionOperator
-    field_in: Field2D
-    field_out: Field2D
-    field_out_back: Field2D
-    field_out_back_in: Field2D
+    field_in: muGridField_t
+    field_out: muGridField_t
+    field_out_back: muGridField_t
+    field_out_back_in: muGridField_t
 
     # def apply(self, *args):
     #     """Apply the mapping.
 
-    #     - field_in: Field2d
-    #     - field_out: Field2d
+    #     - field_in: muGridField_t
+    #     - field_out: muGridField_t
     #     """
     #     self.op.apply(*args)
 
     # def transpose(self, *args):
     #     """Apply the inverse mapping. Matrix-wise, the operator is transposed.
 
-    #     - field_in: Field2d
-    #     - field_out: Field2d
+    #     - field_in: muGridField_t
+    #     - field_out: muGridField_t
     #     """
     #     self.op.transpose(*args)
 
@@ -355,15 +324,15 @@ class LinearFiniteElement:
         nb_operators_interpolation = 1
         self.interpolation = FieldOp(
             muGrid.ConvolutionOperator(
+                conv_pts_shape,
                 np.reshape(
                     self.interpolate_coefficients(quadrature.quad_pt_local_coords),
                     shape=(-1, nb_inputs),
                     order="F",
                 ),
-                conv_pts_shape,
-                nb_pixelnodal_pts,
-                nb_sub_pts,
-                nb_operators_interpolation,
+                # nb_pixelnodal_pts,
+                # nb_sub_pts,
+                # nb_operators_interpolation,
             ),
             self.field_sample,
             self.collection.real_field(
@@ -383,16 +352,16 @@ class LinearFiniteElement:
         nb_operators_gradient = 2
         self.gradient = FieldOp(
             muGrid.ConvolutionOperator(
+                conv_pts_shape,
                 np.reshape(
                     self.gradient_coefficients(quadrature.quad_pt_local_coords)
                     / quadrature.pixel_size,
                     shape=(-1, nb_inputs),
                     order="F",
                 ),
-                conv_pts_shape,
-                nb_pixelnodal_pts,
-                nb_sub_pts,
-                nb_operators_gradient,
+                # nb_pixelnodal_pts,
+                # nb_sub_pts,
+                # nb_operators_gradient,
             ),
             self.field_sample,
             self.collection.real_field(
