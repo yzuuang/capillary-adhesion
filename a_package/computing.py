@@ -34,43 +34,6 @@ class muGridField_t(_t.Protocol):
         """Quantity values on the field, with #components and #sub-pts exposed."""
 
 
-# Forward declaration
-class Grid:
-    pass
-
-
-class Field:
-    """A field that coordinates with other sections."""
-
-    def __init__(self, section: muGridField_t, grid: Grid):
-        self._section = section
-        self._grid = grid
-
-    @property
-    def data(self):
-        return self._section.s
-
-    @data.setter
-    def data(self, value):
-        self._section.s = value
-        self._grid.communicate_ghosts(self._section)
-
-    def sum(self):
-        """Sum up values of all locations. While maintain components and subpoints.z"""
-        # Spatial dimensions are the last two axes
-        return self._grid.sum(np.sum(self._section.s, axis=(-2, -1)))
-
-    def roll(self, shift: int, axis: int):
-        """Roll the field values."""
-        # Two axes before the spatial dimensions: nb_components, nb_sub_pts
-        nb_frontal_axes = 2
-
-        # Roll it one layer per time, as there is only one layer of ghosts
-        for _ in range(shift):
-            self._section.s = np.roll(self._section.s, np.sign(shift), nb_frontal_axes + axis)
-            self._grid.communicate_ghosts(self._section)
-
-
 @dc.dataclass(init=True)
 class Grid:
     """A regular grid with periodic boundaries and is parallelized."""
@@ -152,6 +115,38 @@ def factorize_closest(value: int, nb_ints: int):
         nb_subdivisions.append(max_divisor)
         value //= max_divisor
     return nb_subdivisions
+
+
+class Field:
+    """A field that coordinates with other sections."""
+
+    def __init__(self, section: muGridField_t, grid: Grid):
+        self._section = section
+        self._grid = grid
+
+    @property
+    def data(self):
+        return self._section.s
+
+    @data.setter
+    def data(self, value):
+        self._section.s = value
+        self._grid.communicate_ghosts(self._section)
+
+    def sum(self):
+        """Sum up values of all locations. While maintain components and subpoints.z"""
+        # Spatial dimensions are the last two axes
+        return self._grid.sum(np.sum(self._section.s, axis=(-2, -1)))
+
+    def roll(self, shift: int, axis: int):
+        """Roll the field values."""
+        # Two axes before the spatial dimensions: nb_components, nb_sub_pts
+        nb_frontal_axes = 2
+
+        # Roll it one layer per time, as there is only one layer of ghosts
+        for _ in range(shift):
+            self._section.s = np.roll(self._section.s, np.sign(shift), nb_frontal_axes + axis)
+            self._grid.communicate_ghosts(self._section)
 
 
 class CubicSpline:
