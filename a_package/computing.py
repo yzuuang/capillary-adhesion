@@ -36,37 +36,28 @@ class muGridField_t(_t.Protocol):
 
 @dc.dataclass(init=True)
 class Grid:
-    """A regular grid with periodic boundaries and is parallelized."""
+    """A regular grid with periodic boundaries.
 
-    length: list[float]
-    nb_pixels: list[int]
-    nb_subdivisions: list[int] = dc.field(default_factory=lambda: [])
-    nb_ghost_layers: list[int] = dc.field(default_factory=lambda: [])
+    - It handles the decomposition (via muGrid.CartesianDecomposition).
+    - It supports "world" communication (via muGrid.Communicator).
+    - It manages the fields defined on it (via muGrid.GlobalFieldCollection).
+    """
 
-    @property
-    def nb_dims(self):
-        return len(self.length)
-    
-    @property
-    def spacing(self):
-        return [l/nb for (l, nb) in zip (self.length, self.nb_pixels)]
-
-    def __post_init__(self):
-        # A "world" communicator with or without MPI
-        try:
-            from mpi4py import MPI
-
-            self._communicator = muGrid.Communicator(MPI.COMM_WORLD)
-        except ImportError:
-            print("INFO: MPI is not installed, using stub implementation.")
-            self._communicator = muGrid.Communicator()
-
-        # Default values
-        if len(self.nb_subdivisions) == 0:
-            self.nb_subdivisions = factorize_closest(self._communicator.size, self.nb_dims)
-
-        if len(self.nb_ghost_layers) == 0:
-            self.nb_ghost_layers = [1] * self.nb_dims
+    def __init__(
+        self,
+        length: list[float],
+        nb_pixels: list[int],
+        nb_subdivisions: list[int] = [],
+        nb_ghost_layers: list[int] = [],
+    ):
+        self.length = length
+        self.nb_pixels = nb_pixels
+        if len(nb_subdivisions) == 0:
+            nb_subdivisions = [1] * self.nb_dims
+        self.nb_subdivisions = nb_subdivisions
+        if len(nb_ghost_layers) == 0:
+            nb_ghost_layers = [1] * self.nb_dims
+        self.nb_ghost_layers = nb_ghost_layers
 
         # Value check
         assert (
@@ -76,11 +67,22 @@ class Grid:
             len(self.nb_subdivisions) == self.nb_dims
         ), f"Dimension incompatible. Your field is {self.nb_dims}D. But you specify a {len(self.nb_subdivisions)}D subdivisions."
         assert (
-            np.multiply.reduce(self.nb_subdivisions) <= self._communicator.size
-        ), f"Too many subdivisions. Only {self._communicator.size} nodes are available."
-        assert (
             len(self.nb_ghost_layers) == self.nb_dims
         ), f"Dimension incompatible. Your field is {self.nb_dims}D. But you specify a {len(self.nb_subdivisions)}D ghost layers"
+
+        # A unified "world" communicator with or without MPI
+        try:
+            from mpi4py import MPI
+
+            self._communicator = muGrid.Communicator(MPI.COMM_WORLD)
+        except ImportError:
+            print("INFO: MPI is not installed, using stub implementation.")
+            self._communicator = muGrid.Communicator()
+
+        # A further value check
+        assert (
+            np.multiply.reduce(self.nb_subdivisions) <= self._communicator.size
+        ), f"Too many subdivisions. Only {self._communicator.size} nodes are available."
 
         # Domain decomposition
         self._decomposition = muGrid.CartesianDecomposition(
@@ -94,10 +96,30 @@ class Grid:
         # Field manager
         self._field_collection: muGrid.GlobalFieldCollection = self._decomposition.collection
 
+    @property
+    def nb_dims(self):
+        return len(self.length)
+
+    @property
+    def pixel_length(self):
+        return [l / nb for (l, nb) in zip(self.length, self.nb_pixels)]
+
+    @property
+    def pixel_area(self):
+        return np.multiply.reduce(self.pixel_length)
+
+    @property
+    def nb_pixels_in_section(self):
+        return self._decomposition.nb_subdomain_grid_pts
+
+    @property
+    def pixel_indices_in_section(self):
+        return self._decomposition.icoords
+
     def add_sub_pt_scheme(self, tag: str, nb_sub_pts: int):
         self._field_collection.set_nb_sub_pts(tag, nb_sub_pts)
 
-    def real_field(self, name: str, nb_components: int, sub_pts_tag: str):
+    def real_field(self, name: str, nb_components: int, sub_pts_tag: str = "pixel"):
         return Field(self._field_collection.real_field(name, nb_components, sub_pts_tag), self)
 
     def communicate_ghosts(self, field: muGridField_t):
@@ -118,35 +140,40 @@ def factorize_closest(value: int, nb_ints: int):
 
 
 class Field:
-    """A field that coordinates with other sections."""
+    """A discrete field that takes care of the communication with other sections.
+
+    Implemented as a thin wrapper around muGrid.Field.
+    """
 
     def __init__(self, section: muGridField_t, grid: Grid):
-        self._section = section
+        self.section = section
+        """Each processor only owns its own section of the field data, hence the name."""
         self._grid = grid
 
     @property
     def data(self):
-        return self._section.s
+        return self.section.s
 
     @data.setter
     def data(self, value):
-        self._section.s = value
-        self._grid.communicate_ghosts(self._section)
+        self.section.s = value
+        self._grid.communicate_ghosts(self.section)
 
     def sum(self):
         """Sum up values of all locations. While maintain components and subpoints.z"""
-        # Spatial dimensions are the last two axes
-        return self._grid.sum(np.sum(self._section.s, axis=(-2, -1)))
+        # First sum inside the section, then sum over all sections.
+        # Spatial dimensions are the last axes of the array.
+        return self._grid.sum(np.sum(self.section.s, axis=np.arange(-self._grid.nb_dims, 0)))
 
     def roll(self, shift: int, axis: int):
         """Roll the field values."""
-        # Two axes before the spatial dimensions: nb_components, nb_sub_pts
-        nb_frontal_axes = 2
-
         # Roll it one layer per time, as there is only one layer of ghosts
         for _ in range(shift):
-            self._section.s = np.roll(self._section.s, np.sign(shift), nb_frontal_axes + axis)
-            self._grid.communicate_ghosts(self._section)
+            # Spatial dimensions are the last axes of the array.
+            self.section.s = np.roll(
+                self.section.s, np.sign(shift), -self._grid.nb_dims + axis
+            )
+            self._grid.communicate_ghosts(self.section)
 
 
 class CubicSpline:
