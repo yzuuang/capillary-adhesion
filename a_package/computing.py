@@ -176,6 +176,35 @@ class Field:
             self._grid.communicate_ghosts(self.section)
 
 
+@dc.dataclass(init=True, frozen=True)
+class Quadrature:
+    """Quadrature for numerical approximating an integral."""
+
+    tag: str
+    nb_quad_pts: int
+    quad_pt_local_coords: np.ndarray
+    quad_pt_weights: np.ndarray
+
+    def register(self, grid: Grid):
+        grid.add_sub_pt_scheme(self.tag, self.nb_quad_pts)
+
+    def integrate(self, integrand: np.ndarray, grid: Grid):
+        # Sum over quadrature points (weighted) and over all pixels (equally)
+        local_sum = grid.pixel_area * np.einsum("cs..., s-> c", integrand, self.quad_pt_weights)
+        return grid.sum(local_sum)
+
+
+centroid_quadrature = Quadrature(
+    tag="centroid",
+    nb_quad_pts=2,
+    quad_pt_local_coords=np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]]),
+    quad_pt_weights=np.array([0.5] * 2),
+)
+"""Numerical intergration with quadrature points located at the centroid of the two triangles of
+each pixel. It provides discrete operators for interpolation and gradient.
+"""
+
+
 class CubicSpline:
 
     # FIXME (when sliding?):
@@ -214,65 +243,6 @@ class CubicSpline:
         for idx, pt_loc in enumerate(target_pt_locs):
             result[idx] = self.interpolator(tuple(pt_loc))
         return np.expand_dims(result, axis=0)
-
-
-class Quadrature(abc.ABC):
-    """Base class for computing quadrature over a region."""
-
-    @property
-    @abc.abstractmethod
-    def tag(self) -> str:
-        """A unique tag for sub-pt scheme."""
-
-    @property
-    @abc.abstractmethod
-    def nb_quad_pts(self) -> int:
-        """# quadrature points."""
-
-    @property
-    @abc.abstractmethod
-    def quad_pt_local_coords(self) -> np.ndarray:
-        """Location of quadrature points, normalized in a (1,1) unit square."""
-
-    @property
-    @abc.abstractmethod
-    def quad_pt_weights(self) -> np.ndarray:
-        """Weights of each quadrature points. The sum weights shall equal to one."""
-
-    def __init__(self, grid: Grid):
-        self.pixel_size = grid.length
-        self.pixel_area = grid.length**2
-        self.coordinator = grid.coordinator
-        grid.section.pixel_collection.set_nb_sub_pts(self.tag, self.nb_quad_pts)
-
-    def integrate2D(self, integrand: np.ndarray):
-        # Sum (weighted) over quadrature points
-        pixel_values = np.einsum("csxy, s-> cxy", integrand, self.quad_pt_weights)
-        local_sum = np.sum(pixel_values[self.coordinator.non_ghost], axis=(-1, -2))
-        return self.pixel_area * self.coordinator.communicator.sum(local_sum)
-
-
-
-class CentroidQuadrature(Quadrature):
-    """Numerical intergration with quadrature points located at the centroid of the two triangles of
-    each pixel. It provides discrete operators for interpolation and gradient.
-    """
-
-    @property
-    def tag(self):
-        return "centroid"
-
-    @property
-    def nb_quad_pts(self):
-        return 2
-
-    @property
-    def quad_pt_local_coords(self):
-        return np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]])
-
-    @property
-    def quad_pt_weights(self):
-        return np.array([0.5] * 2)
 
 
 class ConvolutionOperator:
