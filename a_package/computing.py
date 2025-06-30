@@ -34,6 +34,31 @@ class muGridField_t(_t.Protocol):
         """Quantity values on the field, with #components and #sub-pts exposed."""
 
 
+class muGridConvolutionOperator_t(_t.Protocol):
+    """Type hints to muGrid ConvolutionOperator. For the ease of coding."""
+
+    @property
+    def spatial_dim(self):
+        """Spatial dimensions."""
+
+    @property
+    def nb_operators(self):
+        """Number of operators (directions)."""
+
+    @property
+    def nb_quad_pts(self):
+        """Number of quadrature points per pixel."""
+
+    def apply(self, nodal_field: muGridField_t, quadrature_field: muGridField_t):
+        """Apply the mapping, from nodal field to quadrature field."""
+
+    def transpose(self, quadrature_field: muGridField_t, nodal_field: muGridField_t):
+        """Apply the mapping sensitivity (is this dual map?), from quadrature field to nodal field.
+
+        Matrix-wise, it is the transpose of the operator.
+        """
+
+
 @dc.dataclass(init=True)
 class Grid:
     """A regular grid with periodic boundaries.
@@ -175,6 +200,20 @@ class Field:
             )
             self._grid.communicate_ghosts(self.section)
 
+    def bind_mapping(self, operator: muGridConvolutionOperator_t, result: "Field"):
+        def evaluate():
+            operator.apply(self.section, result.section)
+            return result.section.s
+
+        return evaluate
+
+    def bind_mapping_sensitivity(self, operator: muGridConvolutionOperator_t, result: "Field"):
+        def evaluate():
+            operator.transpose(self.section, result.section)
+            return result.section.s
+
+        return evaluate
+
 
 @dc.dataclass(init=True, frozen=True)
 class Quadrature:
@@ -245,36 +284,6 @@ class CubicSpline:
         return np.expand_dims(result, axis=0)
 
 
-class ConvolutionOperator:
-    pass
-
-@dc.dataclass(init=True)
-class FieldOp:
-    """Ad-hoc the ConvolutionOperator with more attributes."""
-
-    op: muGrid.ConvolutionOperator
-    field_in: muGridField_t
-    field_out: muGridField_t
-    field_out_back: muGridField_t
-    field_out_back_in: muGridField_t
-
-    # def apply(self, *args):
-    #     """Apply the mapping.
-
-    #     - field_in: muGridField_t
-    #     - field_out: muGridField_t
-    #     """
-    #     self.op.apply(*args)
-
-    # def transpose(self, *args):
-    #     """Apply the inverse mapping. Matrix-wise, the operator is transposed.
-
-    #     - field_in: muGridField_t
-    #     - field_out: muGridField_t
-    #     """
-    #     self.op.transpose(*args)
-
-
 class LinearFiniteElement:
     """A unit pixel discretized with linear finite element basis.
 
@@ -283,137 +292,62 @@ class LinearFiniteElement:
     the "lower triangle", the other is the "upper triangle".
     """
 
-    def __init__(self, grid: Grid, data: np.ndarray):
-        self.coordinator = grid.coordinator
-        self.collection = grid.section.pixel_collection
-        try:
-            self.nb_components_input = np.size(data, axis=-3)
-        except IndexError:
-            self.nb_components_input = 1
-        self.field_sample = self.collection.real_field("input", self.nb_components_input)
+    def create_field_value_approximation(
+        self, location_in_pixel: np.ndarray
+    ) -> muGridConvolutionOperator_t:
+        offset = [1, 1]
+        pixel_operator = self.get_value_interpolation_coefficients(location_in_pixel)
+        return muGrid.ConvolutionOperator(offset, pixel_operator)
 
-    def sample(self, value: np.ndarray):
-        self.field_sample.p = value
-        self.coordinator.update(self.field_sample)
+    def create_field_gradient_approximation(
+        self, location_in_pixel: np.ndarray, grid: Grid  # FIXME: use grid spacing rather than grid.
+    ) -> muGridConvolutionOperator_t:
+        offset = [1, 1]
+        pixel_operator = self.get_gradient_interpolation_coefficients(
+            location_in_pixel
+        ) / np.reshape(
+            grid.pixel_length, [1, 1]
+        )  # FIXME: ambiguity of shape
+        return muGrid.ConvolutionOperator(offset, pixel_operator)
 
-    def apply_operators(self, operators: list[FieldOp]) -> list[np.ndarray]:
-        result = []
-        for operator in operators:
-            operator.op.apply(operator.field_in, operator.field_out)
-            result.append(operator.field_out.s)
-        return result
-
-    def apply_transposed_to_values(self, values: list[np.ndarray], operators: list[FieldOp]):
-        result = 0
-        for value, operator in zip(values, operators):
-            operator.field_out_back.s = value
-            operator.op.transpose(operator.field_out_back, operator.field_out_back_in)
-            result += operator.field_out_back_in.p
-
-        # Sum over sensitivities
-        return np.squeeze(result, axis=0)
-
-    def setup_operators(self, quadrature: Quadrature):
-        nb_sub_pts = np.size(quadrature.quad_pt_local_coords, axis=0)
-        conv_pts_shape = [2, 2]
-        nb_pixelnodal_pts = 1
-        nb_inputs = np.multiply.reduce(conv_pts_shape) * nb_pixelnodal_pts
-
-        # Interpolation operator
-        nb_operators_interpolation = 1
-        self.interpolation = FieldOp(
-            muGrid.ConvolutionOperator(
-                conv_pts_shape,
-                np.reshape(
-                    self.interpolate_coefficients(quadrature.quad_pt_local_coords),
-                    shape=(-1, nb_inputs),
-                    order="F",
-                ),
-                # nb_pixelnodal_pts,
-                # nb_sub_pts,
-                # nb_operators_interpolation,
-            ),
-            self.field_sample,
-            self.collection.real_field(
-                "field_interpolation",
-                nb_operators_interpolation * self.nb_components_input,
-                quadrature.tag,
-            ),
-            self.collection.real_field(
-                "field_interpolation_back",
-                nb_operators_interpolation * self.nb_components_input,
-                quadrature.tag,
-            ),
-            self.collection.real_field("field_interpolation_back_in", self.nb_components_input),
-        )
-
-        # Gradient operator
-        nb_operators_gradient = 2
-        self.gradient = FieldOp(
-            muGrid.ConvolutionOperator(
-                conv_pts_shape,
-                np.reshape(
-                    self.gradient_coefficients(quadrature.quad_pt_local_coords)
-                    / quadrature.pixel_size,
-                    shape=(-1, nb_inputs),
-                    order="F",
-                ),
-                # nb_pixelnodal_pts,
-                # nb_sub_pts,
-                # nb_operators_gradient,
-            ),
-            self.field_sample,
-            self.collection.real_field(
-                "field_gradient",
-                nb_operators_gradient * self.nb_components_input,
-                quadrature.tag,
-            ),
-            self.collection.real_field(
-                "field_gradient_back",
-                nb_operators_gradient * self.nb_components_input,
-                quadrature.tag,
-            ),
-            self.collection.real_field("field_gradient_back_in", self.nb_components_input),
-        )
-
-    def interpolate_coefficients(self, local_coords):
-        res = np.empty([np.size(local_coords, axis=0), 2, 2])
-        for i, (x1, x2) in enumerate(local_coords):
+    def get_value_interpolation_coefficients(self, location_in_pixel):
+        res = np.empty([np.size(location_in_pixel, axis=0), 2, 2])
+        for i, (x1, x2) in enumerate(location_in_pixel):
             if x1 + x2 < 1:
                 # Lower triangle
-                res[i] = self.shape_lower_triangle(x1, x2)
+                res[i] = self.lower_triangle_shape_function(x1, x2)
             else:
                 # Upper triangle
-                res[i] = self.shape_upper_triangle(x1, x2)
+                res[i] = self.upper_triangle_shape_function(x1, x2)
         return res
 
     @staticmethod
-    def shape_lower_triangle(x1, x2):
+    def lower_triangle_shape_function(x1, x2):
         return [
             [1 - x1 - x2, x2],
             [x1, 0],
         ]
 
     @staticmethod
-    def shape_upper_triangle(x1, x2):
+    def upper_triangle_shape_function(x1, x2):
         return [
             [0, 1 - x1],
             [1 - x2, x1 + x2 - 1],
         ]
 
-    def gradient_coefficients(self, local_coords):
-        res = np.empty([2, np.size(local_coords, axis=0), 2, 2])
-        for i, (x1, x2) in enumerate(local_coords):
+    def get_gradient_interpolation_coefficients(self, location_in_pixel):
+        res = np.empty([2, np.size(location_in_pixel, axis=0), 2, 2])
+        for i, (x1, x2) in enumerate(location_in_pixel):
             if x1 + x2 < 1:
                 # Lower triangle
-                res[:, i] = self.slope_lower_triangle(x1, x2)
+                res[:, i] = self.lower_triangle_shape_function_gradient(x1, x2)
             else:
                 # Upper triangle
-                res[:, i] = self.slope_upper_triangle(x1, x2)
+                res[:, i] = self.uppper_triangle_shape_function_gradient(x1, x2)
         return res
 
     @staticmethod
-    def slope_lower_triangle(x1, x2):
+    def lower_triangle_shape_function_gradient(x1, x2):
         return [
             [
                 [-1, 0],
@@ -426,7 +360,7 @@ class LinearFiniteElement:
         ]
 
     @staticmethod
-    def slope_upper_triangle(x1, x2):
+    def uppper_triangle_shape_function_gradient(x1, x2):
         return [
             [
                 [0, -1],
