@@ -304,14 +304,14 @@ class Linear2DFiniteElementInPixel:
     def create_field_value_approximation(
         self, offset_in_pixel: np.ndarray
     ) -> muGridConvolutionOperator_t:
-        offset = [1, 1]
+        offset = [0, 0]
         pixel_operator = self.get_value_interpolation_coefficients(offset_in_pixel)
         return muGrid.ConvolutionOperator(offset, pixel_operator)
 
     def create_field_gradient_approximation(
         self, offset_in_pixel: np.ndarray, dx1: float, dx2: float
     ) -> muGridConvolutionOperator_t:
-        offset = [1, 1]
+        offset = [0, 0]
         pixel_operator = self.get_gradient_interpolation_coefficients(offset_in_pixel)
         pixel_operator[0] = pixel_operator[0] / dx1
         pixel_operator[1] = pixel_operator[1] / dx2

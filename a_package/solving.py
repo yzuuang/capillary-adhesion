@@ -10,7 +10,9 @@ import timeit
 import typing as _t
 
 import numpy as np
-from NuMPI.Optimization import l_bfgs
+# from mpi4py import MPI
+# from NuMPI.Optimization import l_bfgs
+from scipy.optimize import fmin_l_bfgs_b
 
 
 @dc.dataclass
@@ -74,28 +76,42 @@ class AugmentedLagrangian:
         for k, c in enumerate(cc):
             # solve minimization problem
             t_exec_sub = -timeit.default_timer()
-            res = l_bfgs(
+            # res = l_bfgs(
+            #     self.l,
+            #     # old solution as new initial guess
+            #     x_plus,
+            #     # bounds=[(0, 1)] * len(x_plus),
+            #     jac=self.dx_l,
+            #     args=(lam, c),
+            #     ftol=1e1,
+            #     gtol=self.tolerance_convergence,
+            #     maxiter=self.max_iter,
+            #     comm=MPI.COMM_WORLD,
+            # )
+            [x_plus, l_plus, res] = fmin_l_bfgs_b(
                 self.l,
                 # old solution as new initial guess
                 x_plus,
                 # bounds=[(0, 1)] * len(x_plus),
-                jac=self.dx_l,
+                fprime=self.dx_l,
                 args=(lam, c),
-                ftol=1e1,  # for extremely high accuracy
-                gtol=self.tolerance_convergence,
+                factr=1e3,
+                pgtol=self.tolerance_convergence,
                 maxiter=self.max_iter,
             )
             t_exec_sub += timeit.default_timer()
             t_exec += t_exec_sub
 
-            # inform
-            x_plus = res['x']
-            l_plus = res['fun']
-            l_grad = res['jac']
+            # Get more info
+            # x_plus = res['x']
+            # l_plus = res['fun']
+            # l_grad = res['jac']
+            l_grad = res['grad']
             f_plus = self.f(x_plus)
             g_plus = self.g(x_plus)
             lagr1 = f_plus + lam * g_plus
 
+            # Print
             tabel_entry = [
                 f"#{k}",
                 f"{round(t_exec_sub, 2):.2f}s",

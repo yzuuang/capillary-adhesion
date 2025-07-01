@@ -139,6 +139,7 @@ class CapillaryBridge:
         # The field to save phase at nodal points
         self.phase_nodal_field = self.grid.real_field("phase_nodal", 1, "pixel")
         self.phase_nodal_field.data = phase_nodal
+        self.original_shape = np.shape(phase_nodal)
 
         # The "Convolution Operator" will be used
         fem = Linear2DFiniteElementInPixel()
@@ -282,19 +283,19 @@ class CapillaryBridge:
         self,
         liquid_volume: float,
     ):
-        # def f(x: np.ndarray) -> float:
-        #     phi = np.pad(x, 1, mode="constant", constant_values=-1)
-        #     return self.compute_energy(np.expand_dims(phi, axis=0))
+        def f(x: np.ndarray) -> float:
+            x = x.reshape(self.original_shape)
+            return self.compute_energy(x)
 
-        # self.solver.f = f
-        self.solver.f = lambda x: self.compute_energy(x)
+        self.solver.f = f
+        # self.solver.f = lambda x: self.compute_energy(x)
 
-        # def g(x: np.ndarray) -> float:
-        #     phi = np.pad(x, 1, mode="constant", constant_values=-1)
-        #     return self.compute_volume(np.expand_dims(phi, axis=0)) - liquid_volume
+        def g(x: np.ndarray) -> float:
+            x = x.reshape(self.original_shape)
+            return self.compute_volume(x) - liquid_volume
 
-        # self.solver.g = g
-        self.solver.g = lambda x: self.compute_volume(x) - liquid_volume
+        self.solver.g = g
+        # self.solver.g = lambda x: self.compute_volume(x) - liquid_volume
 
         def l(x: np.ndarray, lam: float, c: float) -> float:
             # print(f"In l(x), x has datatype {x.dtype}")
@@ -312,6 +313,7 @@ class CapillaryBridge:
             # print(f"In l(x), l has value {val}\n")
             # return val
             # FIXME: avoid updating field two times
+            x = x.reshape(self.original_shape)
             f = self.compute_energy(x)
             g = self.compute_volume(x)
             return f + lam * g + 0.5 * c * g**2
@@ -340,10 +342,12 @@ class CapillaryBridge:
             # val = (dx_f + (lam + c * g) * dx_g)[self.grid.coordinator.non_ghost]
             # print(f"In dx_l(x), dx_l has shape {val.shape}, has values\n {val}\n")
             # return val
-            # FIXME: avoid updating field two times
+            # FIXME: avoid updating field three times
+            x = x.reshape(self.original_shape)
             f_D_x = self.compute_energy_jacobian(x)
+            g = self.compute_volume(x)
             g_D_x = self.compute_volume_jacobian(x)
-            return f_D_x + (lam + c * g_D_x) * g_D_x
+            return f_D_x + (lam + c * g) * g_D_x
 
         self.solver.dx_l = l_D_x
 
