@@ -54,16 +54,17 @@ class SelfAffineRoughness:
 class SolidSolidContact:
     """Contact between two rough solid planes."""
 
+    lower_height: Components_t
+    upper_height: Components_t
     mean_plane_separation: float
-    height_lower: Components_t
 
-    def gap_height(self, height_upper: Components_t):
+    def gap_height(self):
         """The gap between two rough surface where a thrid matter can exist.
 
         Assume interpenaltration, so clip all negative values to zero.
         """
         return np.clip(
-            height_upper - self.height_lower + self.mean_plane_separation, a_min=0, a_max=None
+            self.upper_height - self.lower_height + self.mean_plane_separation, a_min=0, a_max=None
         )
 
 
@@ -105,7 +106,7 @@ class CapillaryVapourLiquid:
             (1 / self.interfacial_width)
             * self.double_well_penalty_derivative(phi)
         )
-        # FIXME: add the slope contribution.
+        # FIXME: add the slope contribution. Or not?
         area_water_solid_sens_phi = 2
 
         energy_density_sens_phi = (
@@ -135,6 +136,7 @@ class CapillaryVapourLiquid:
         return [self.heterogeneous_height]
 
     def adhesive_force(self, phi: Components_t, d_phi: Components_t):
+        raise NotImplementedError("We don't have explicit dependency of phase-field to gap height.")
         return (
             # double well penalty on phi
             (1 / self.interfacial_width) * self.double_well_penalty(phi)

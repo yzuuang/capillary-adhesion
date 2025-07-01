@@ -6,7 +6,7 @@ from a_package.storing import working_directory
 from a_package.simulating import *
 
 
-show_me = True
+show_me = False
 
 
 def main():
@@ -22,24 +22,15 @@ def simulate(data_path: str):
     # Region
     nb_spatial_dims = 2
     domain_length = [1.0, 1.0]
-    nb_pixels = [100] * nb_spatial_dims
+    nb_pixels = [20] * nb_spatial_dims
     nb_subdivisions = [1, 1]
     nb_ghost_layers = [1, 1]
     grid = Grid(domain_length, nb_pixels, nb_subdivisions, nb_ghost_layers)
     a = np.maximum.reduce(grid.pixel_length)
 
-    # Surface roughness
-    C0 = 1e4  # prefactor
-    qR = (2 * np.pi) / (2e1 * a)  # roll-off
-    qS = (2 * np.pi) / (5e0 * a)  # cut-off
-    H = 0.95  # Hurst exponent
-    roughness = SelfAffineRoughness(C0, qR, qS, H)
-
-    # Two planes based on the roughness model & random patternW
-    seed = None
-    rng = get_rng(grid, seed)
-    h0 = generate_height_profile(grid, roughness, rng)
-    h1 = generate_height_profile(grid, roughness, rng)
+    # Two flat planar solid
+    h0 = np.zeros([1, 1, *grid.nb_pixels_in_section])
+    h1 = np.zeros([1, 1, *grid.nb_pixels_in_section])
 
     # The gap between contact
     delta = 2 * a
@@ -48,13 +39,13 @@ def simulate(data_path: str):
     if show_me:
         fig, ax = plt.subplots()
 
-        g = np.squeeze(gap_height)
+        g = np.squeeze(gap_height) / a
         vmax = g.max()
         vmin = 0
         [lx, ly] = grid.length
         border = np.array([0, lx / a, 0, ly / a])
         im = ax.imshow(
-            g / a,
+            g,
             cmap='afmhot',
             vmin=vmin,
             vmax=vmax,
@@ -71,6 +62,7 @@ def simulate(data_path: str):
     liquid_vapour = CapillaryVapourLiquid(eta, gamma, gap_height)
 
     # Random initial values of phase field
+    rng = get_rng(grid, seed=None)
     phi_init = random_initial_guess(grid, rng)
 
     # The solver for optimization

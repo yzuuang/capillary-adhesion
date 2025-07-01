@@ -99,12 +99,12 @@ class AugmentedLagrangian:
             tabel_entry = [
                 f"#{k}",
                 f"{round(t_exec_sub, 2):.2f}s",
-                f"{f_plus:.2e}",
-                f"{lam:.2e}",
-                f"{lagr1:.2e}",
-                f"{c:.2e}",
-                f"{l_plus:.2e}",
-                f"{np.amax[np.absolute(l_grad)]:.2e}",
+                f"{f_plus}",
+                f"{lam}",
+                f"{lagr1}",
+                f"{c}",
+                f"{l_plus}",
+                f"{np.amax(np.absolute(l_grad))}",
             ]
             print("\t".join(tabel_entry))
 

@@ -33,6 +33,13 @@ class muGridField_t(_t.Protocol):
     def s(self) -> np.ndarray[tuple[int, ...], np.dtype]:
         """Quantity values on the field, with #components and #sub-pts exposed."""
 
+    @property
+    def sg(self) -> np.ndarray[tuple[int, ...], np.dtype]:
+        """Quantity values on the field and border, with #components and #sub-pts exposed.
+
+        This seems necessary for all "interpolation".
+        """
+
 
 class muGridConvolutionOperator_t(_t.Protocol):
     """Type hints to muGrid ConvolutionOperator. For the ease of coding."""
@@ -135,7 +142,12 @@ class Grid:
 
     @property
     def nb_pixels_in_section(self):
-        return self._decomposition.nb_subdomain_grid_pts
+        return [
+            nb_pts - 2 * nb_layers
+            for (nb_pts, nb_layers) in zip(
+                self._decomposition.nb_subdomain_grid_pts, self.nb_ghost_layers
+            )
+        ]
 
     @property
     def pixel_indices_in_section(self):
@@ -152,6 +164,9 @@ class Grid:
 
     def sum(self, value: _t.Union[int, float, np.ndarray]):
         return self._communicator.sum(value)
+
+    def get_world_communicator(self):
+        return self._communicator
 
 
 def factorize_closest(value: int, nb_ints: int):
@@ -188,16 +203,14 @@ class Field:
         """Sum up values of all locations. While maintain components and subpoints.z"""
         # First sum inside the section, then sum over all sections.
         # Spatial dimensions are the last axes of the array.
-        return self._grid.sum(np.sum(self.section.s, axis=np.arange(-self._grid.nb_dims, 0)))
+        return self._grid.sum(np.sum(self.section.s, axis=tuple(range(-self._grid.nb_dims, 0))))
 
     def roll(self, shift: int, axis: int):
         """Roll the field values."""
         # Roll it one layer per time, as there is only one layer of ghosts
         for _ in range(shift):
             # Spatial dimensions are the last axes of the array.
-            self.section.s = np.roll(
-                self.section.s, np.sign(shift), -self._grid.nb_dims + axis
-            )
+            self.section.s = np.roll(self.section.s, np.sign(shift), -self._grid.nb_dims + axis)
             self._grid.communicate_ghosts(self.section)
 
     def bind_mapping(self, operator: muGridConvolutionOperator_t, result: "Field"):
@@ -221,23 +234,23 @@ class Quadrature:
 
     tag: str
     nb_quad_pts: int
-    quad_pt_local_coords: np.ndarray
+    nb_dims: int
+    quad_pt_offset: np.ndarray
     quad_pt_weights: np.ndarray
-
-    def register(self, grid: Grid):
-        grid.add_sub_pt_scheme(self.tag, self.nb_quad_pts)
 
     def integrate(self, integrand: np.ndarray, grid: Grid):
         # Sum over quadrature points (weighted) and over all pixels (equally)
-        local_sum = grid.pixel_area * np.einsum("cs..., s-> c", integrand, self.quad_pt_weights)
+        local_sum = np.einsum("cs..., s-> c...", integrand, self.quad_pt_weights)
+        local_sum = grid.pixel_area * np.sum(local_sum, axis=tuple(range(-self.nb_dims, 0)))
         return grid.sum(local_sum)
 
 
 centroid_quadrature = Quadrature(
     tag="centroid",
     nb_quad_pts=2,
-    quad_pt_local_coords=np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]]),
-    quad_pt_weights=np.array([0.5] * 2),
+    nb_dims=2,
+    quad_pt_offset=np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]]),
+    quad_pt_weights=np.array([0.5, 0.5]),
 )
 """Numerical intergration with quadrature points located at the centroid of the two triangles of
 each pixel. It provides discrete operators for interpolation and gradient.
@@ -247,44 +260,40 @@ each pixel. It provides discrete operators for interpolation and gradient.
 class CubicSpline:
 
     # FIXME (when sliding?):
-    #
-    # the global height, pad right for periodicity, interpolate.
-    #
-    # get the slice with left / right extra 1 grid. so it can interpolate sliding part?
+    # get the slice with left / right extra 1 grid. so it can interpolate the sliding part?
 
-    def __init__(self, grid: Grid, data: np.ndarray):
-        self.nb_pixels = grid.section.nb_pixels
-        # Due to periodic boundary, there is one more "hidden" grid point in the end, so plus 1
-        # for axes in sampling data
-        self.axis_pt_locs = tuple(np.arange(nb_pts + 1) for nb_pts in self.nb_pixels)
-        # But we don't explicitly save the value at the end, so no plus 1 for grid in interpolation
-        self.pixel_locs = np.stack(
-            np.meshgrid(*(np.arange(nb_pts) for nb_pts in self.nb_pixels)), axis=0
-        )
-        self.sample(data)
+    def __init__(self, grid: Grid):
+        self.nb_dims = grid.nb_dims
+        self.sample_location_in_each_axis = [
+            # Scipy only accepts the indices to be strictly increasing
+            np.arange(-nb_layers, nb_pts + nb_layers)
+            for (nb_pts, nb_layers) in zip(grid.nb_pixels_in_section, grid.nb_ghost_layers)
+        ]
+        self.nb_pixels = grid.nb_pixels_in_section
+        self.pixel_origin_location = grid.pixel_indices_in_section
 
-    def sample(self, data: np.ndarray):
-        grid_dim = len(self.axis_pt_locs)
-        data = data.squeeze(axis=tuple(range(data.ndim - grid_dim)))
-        pad_size = [(0, 1)] * grid_dim
-        self.interpolator = RegularGridInterpolator(
-            self.axis_pt_locs, np.pad(data, pad_size, mode="wrap"), method="cubic"
-        )
+    def sample(self, field: Field):
+        assert field.section.nb_components == 1
+        data = np.squeeze(field.section.sg)
+        self.interpolator = RegularGridInterpolator(self.sample_location_in_each_axis, data, method="cubic")
 
-    def interpolate(self, local_coords: np.ndarray):
+    def interpolate(self, offset_in_pixel: np.ndarray):
         """
-        - local_coords: array of 2D coordinates located inside a (1,1) square.
+        - offset_in_pixel: array of 2D coordinates located inside a (1,1) square.
         """
-        target_pt_locs = (
-            self.pixel_locs[np.newaxis, ...] + local_coords[..., np.newaxis, np.newaxis]
-        )
-        result = np.empty((np.size(local_coords, axis=0), *self.nb_pixels))
-        for idx, pt_loc in enumerate(target_pt_locs):
-            result[idx] = self.interpolator(tuple(pt_loc))
+        [nb_sub_pts, nb_dims] = np.shape(offset_in_pixel)
+        assert self.nb_dims == nb_dims
+
+        result = np.empty([nb_sub_pts, *self.nb_pixels])
+        for idx, loc in enumerate(offset_in_pixel):
+            # Sum arrays with shape (nb_dims, nb_x, nb_y) and (nb_dims,)
+            interp_location = self.pixel_origin_location + np.expand_dims(loc, axis=tuple(range(-self.nb_dims, 0)))
+            result[idx] = self.interpolator(tuple(interp_location))
+        # Keep the convention that 0-axis covers components
         return np.expand_dims(result, axis=0)
 
 
-class LinearFiniteElement:
+class Linear2DFiniteElementInPixel:
     """A unit pixel discretized with linear finite element basis.
 
     The vertices of the pixel are (0,0), (1,0), (0,1), (1,1). It is divided into two triangles by
@@ -293,32 +302,31 @@ class LinearFiniteElement:
     """
 
     def create_field_value_approximation(
-        self, location_in_pixel: np.ndarray
+        self, offset_in_pixel: np.ndarray
     ) -> muGridConvolutionOperator_t:
         offset = [1, 1]
-        pixel_operator = self.get_value_interpolation_coefficients(location_in_pixel)
+        pixel_operator = self.get_value_interpolation_coefficients(offset_in_pixel)
         return muGrid.ConvolutionOperator(offset, pixel_operator)
 
     def create_field_gradient_approximation(
-        self, location_in_pixel: np.ndarray, grid: Grid  # FIXME: use grid spacing rather than grid.
+        self, offset_in_pixel: np.ndarray, dx1: float, dx2: float
     ) -> muGridConvolutionOperator_t:
         offset = [1, 1]
-        pixel_operator = self.get_gradient_interpolation_coefficients(
-            location_in_pixel
-        ) / np.reshape(
-            grid.pixel_length, [1, 1]
-        )  # FIXME: ambiguity of shape
+        pixel_operator = self.get_gradient_interpolation_coefficients(offset_in_pixel)
+        pixel_operator[0] = pixel_operator[0] / dx1
+        pixel_operator[1] = pixel_operator[1] / dx2
         return muGrid.ConvolutionOperator(offset, pixel_operator)
 
-    def get_value_interpolation_coefficients(self, location_in_pixel):
-        res = np.empty([np.size(location_in_pixel, axis=0), 2, 2])
-        for i, (x1, x2) in enumerate(location_in_pixel):
+    def get_value_interpolation_coefficients(self, offset_in_pixel):
+        nb_sub_pts = np.size(offset_in_pixel, axis=0)
+        res = np.empty([1, nb_sub_pts, 2, 2])
+        for i, (x1, x2) in enumerate(offset_in_pixel):
             if x1 + x2 < 1:
                 # Lower triangle
-                res[i] = self.lower_triangle_shape_function(x1, x2)
+                res[:,i] = self.lower_triangle_shape_function(x1, x2)
             else:
                 # Upper triangle
-                res[i] = self.upper_triangle_shape_function(x1, x2)
+                res[:,i] = self.upper_triangle_shape_function(x1, x2)
         return res
 
     @staticmethod
@@ -335,9 +343,9 @@ class LinearFiniteElement:
             [1 - x2, x1 + x2 - 1],
         ]
 
-    def get_gradient_interpolation_coefficients(self, location_in_pixel):
-        res = np.empty([2, np.size(location_in_pixel, axis=0), 2, 2])
-        for i, (x1, x2) in enumerate(location_in_pixel):
+    def get_gradient_interpolation_coefficients(self, offset_in_pixel):
+        res = np.empty([2, np.size(offset_in_pixel, axis=0), 2, 2])
+        for i, (x1, x2) in enumerate(offset_in_pixel):
             if x1 + x2 < 1:
                 # Lower triangle
                 res[:, i] = self.lower_triangle_shape_function_gradient(x1, x2)

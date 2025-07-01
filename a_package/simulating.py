@@ -24,7 +24,7 @@ def get_rng(grid: Grid, seed: _t.Optional[int]):
     and broadcasts it.
     """
     if seed is None:
-        communicator = grid.coordinator.communicator
+        communicator = grid.get_world_communicator()
 
         # Generate a random seed at the root process
         if communicator.rank == 0:
@@ -63,7 +63,7 @@ def get_rng(grid: Grid, seed: _t.Optional[int]):
 def generate_wave_numbers(grid: Grid):
     # Wave number axes
     wave_numbers_in_each_dim = (
-        (2 * np.pi) * fft.fftfreq(n, d=l) for n, l in zip(grid.nb_pixels, grid.spacing)
+        (2 * np.pi) * fft.fftfreq(n, d=l) for n, l in zip(grid.nb_pixels, grid.pixel_length)
     )
     # Wave number grids
     wave_numbers_in_each_dim = np.meshgrid(*wave_numbers_in_each_dim)
@@ -83,144 +83,269 @@ def generate_height_profile(grid: Grid, roughness: SelfAffineRoughness, rng):
     # impose some random phase angle
     phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, np.shape(psd)))
 
-    # FIXME: use muFFT to have it parallelized
+    # FIXME: parallelise it with muFFT
     height = fft.ifftn(rms_height * phase_angle).real
-    return height[(..., *grid.section.global_coords)]
+    # Get the local section
+    return height[(np.newaxis, ..., *grid.pixel_indices_in_section)]
 
 
 def random_initial_guess(grid: Grid, rng):
-    return rng.random(tuple(grid.section.nb_pixels))
+    return rng.random([1, 1, *tuple(grid.nb_pixels_in_section)])
 
 
 @dc.dataclass(init=True)
 class CapillaryBridge:
-    """The simulator."""
+    """The simulator.
 
-    grid: Grid
-    contact: SolidSolidContact
-    height_lower_solid: CubicSpline
-    height_upper_solid: CubicSpline
-    vapour_liquid: CapillaryVapourLiquid
-    phase_field: LinearFiniteElement
-    quadrature: Quadrature
-    solver: AugmentedLagrangian
+    Naming convention for the data attributes related to field data:
+    - Ending with "_field" means a Field object, otherwise the raw value (NumPy array)
+    - "aaa_D_bbb" means the derivative of aaa w.r.t. bbb
+    - Starting with "evaluate_" means a non-parameter function
+    """
 
-    def __post_init__(self):
-        collection = self.grid.section.pixel_collection
-        self.rolling_height_field = collection.real_field("rolling_height", 1, "pixel")
-        self.pixels_rolled = np.zeros(2)
+    def __init__(
+        self,
+        grid: Grid,
+        solid_solid: SolidSolidContact,
+        vapour_liquid: CapillaryVapourLiquid,
+        solver: AugmentedLagrangian,
+        lower_height_nodal: np.ndarray,
+        upper_height_nodal: np.ndarray,
+        phase_nodal: np.ndarray,
+        quadrature: Quadrature = centroid_quadrature,
+    ):
+        self.grid = grid
+        self.solid_solid = solid_solid
+        self.vapour_liquid = vapour_liquid
+        self.solver = solver
 
-        self.phase_field.setup_operators(self.quadrature)
+        # Register the sub-point scheme of quadrature
+        self.quadrature = quadrature
+        self.grid.add_sub_pt_scheme(self.quadrature.tag, self.quadrature.nb_quad_pts)
 
-        self.original_shape = (1, *self.grid.section.nb_pixels)
+        # The field to save height at nodal points
+        self.lower_height_nodal_field = self.grid.real_field("lower_height_nodal", 1, "pixel")
+        self.lower_height_nodal_field.data = lower_height_nodal
+        self.upper_height_nodal_field = self.grid.real_field("upper_height_nodal", 1, "pixel")
+        self.upper_height_nodal_field.data = upper_height_nodal
+
+        # get the height at quad pionts
+        spline = CubicSpline(self.grid)
+        spline.sample(self.lower_height_nodal_field)
+        self.solid_solid.lower_height = spline.interpolate(self.quadrature.quad_pt_offset)
+        spline.sample(self.upper_height_nodal_field)
+        self.solid_solid.upper_height = spline.interpolate(self.quadrature.quad_pt_offset)
+
+        # The field to save phase at nodal points
+        self.phase_nodal_field = self.grid.real_field("phase_nodal", 1, "pixel")
+        self.phase_nodal_field.data = phase_nodal
+
+        # The "Convolution Operator" will be used
+        fem = Linear2DFiniteElementInPixel()
+        value_op = fem.create_field_value_approximation(self.quadrature.quad_pt_offset)
+        gradient_op = fem.create_field_gradient_approximation(
+            self.quadrature.quad_pt_offset, *grid.pixel_length
+        )
+
+        # Construct various fields and methods for phase field computation
+        phase_quad_field = self.grid.real_field("phase_quad", 1, self.quadrature.tag)
+        self.evaluate_phase_quad = self.phase_nodal_field.bind_mapping(value_op, phase_quad_field)
+
+        phase_gradient_quad_field = self.grid.real_field(
+            "phase_gradient_quad", self.grid.nb_dims, self.quadrature.tag
+        )
+        self.evaluate_phase_gradient_quad = self.phase_nodal_field.bind_mapping(
+            gradient_op, phase_gradient_quad_field
+        )
+
+        self.energy_D_phase_quad_field = self.grid.real_field(
+            "energy_D_phase_quad", 1, self.quadrature.tag
+        )
+        energy_D_phase_quad_D_phase_nodal_field = self.grid.real_field(
+            "energy_D_phase_quad_D_phase_nodal", 1, "pixel"
+        )
+        self.evaluate_energy_D_phase_quad_D_phase_nodal = (
+            self.energy_D_phase_quad_field.bind_mapping_sensitivity(
+                value_op, energy_D_phase_quad_D_phase_nodal_field
+            )
+        )
+
+        self.energy_D_phase_gradient_quad_field = self.grid.real_field(
+            "energy_D_phase_gradient_quad", self.grid.nb_dims, self.quadrature.tag
+        )
+        energy_D_phase_gradient_quad_D_phase_nodal_field = self.grid.real_field(
+            "energy_D_phase_quad_D_phase_nodal", 1, "pixel"
+        )
+        self.evaluate_energy_D_phase_gradient_quad_D_phase_nodal = (
+            self.energy_D_phase_gradient_quad_field.bind_mapping_sensitivity(
+                gradient_op, energy_D_phase_gradient_quad_D_phase_nodal_field
+            )
+        )
+
+        self.volume_D_phase_quad_field = self.grid.real_field(
+            "volume_D_phase_quad", 1, self.quadrature.tag
+        )
+        volume_D_phase_quad_D_phase_nodal_field = self.grid.real_field(
+            "volume_D_phase_quad_D_phase_nodal", 1, "pixel"
+        )
+        self.evaluate_volume_D_phase_quad_D_phase_nodal = (
+            self.volume_D_phase_quad_field.bind_mapping_sensitivity(
+                value_op, volume_D_phase_quad_D_phase_nodal_field
+            )
+        )
+
+        # FIXME: roll the upper height for sliding simulation
+        # self.rolling_height_field = self.grid.real_field("rolling_height", 1, "pixel")
+        # self.nb_rolled_pixels = np.zeros(self.grid.nb_dims)
 
     def relocate_solid_plane(self, displacement: np.ndarray):
         # Get components
         [x, y, z] = displacement
 
         # The normal part, simply set the quantity
-        self.contact.mean_plane_separation = z
+        self.solid_solid.mean_plane_separation = z
 
-        # The tangential part, split into integer and fractional parts. The integer part is the
-        # handled by rolling, the fractional part becomes coordinate deviation in interpolation.
-        frac_shear = np.empty(2)
-        for axis, value in enumerate([x, y]):
-            # Normaliz such that grid_spacing == 1.0
-            [frac, nb_pixels] = math.modf(value / self.grid.spacing[axis])
-            if nb_pixels >= 1.0:
-                self.region.roll(
-                    self.rolling_height_field,
-                    int(nb_pixels - self.pixels_rolled[axis]),
-                    axis=axis,
-                )
-                self.pixels_rolled[axis] = nb_pixels
-            frac_shear[axis] = frac
-        self.height_upper_solid.sample(self.rolling_height_field.p)
-        h1 = self.height_upper_solid.interpolate(self.quadrature.quad_pt_local_coords - frac_shear)
-        self.vapour_liquid.heterogeneous_height = self.contact.gap_height(h1)
+        # FIXME: roll the upper height for sliding simulation
+        # # The tangential part, split into integer and fractional parts. The integer part is the
+        # # handled by rolling, the fractional part becomes coordinate deviation in interpolation.
+        # frac_shear = np.empty(2)
+        # for axis, value in enumerate([x, y]):
+        #     # Normaliz such that grid_spacing == 1.0
+        #     [frac, nb_pixels] = math.modf(value / self.grid.pixel_length[axis])
+        #     if nb_pixels >= 1.0:
+        #         self.region.roll(
+        #             self.rolling_height_field,
+        #             int(nb_pixels - self.nb_rolled_pixels[axis]),
+        #             axis=axis,
+        #         )
+        #         self.nb_rolled_pixels[axis] = nb_pixels
+        #     frac_shear[axis] = frac
+        # spline = CubicSpline(self.grid)
+        # spline.sample(self.upper_height_nodal_field)
+        # self.solid_solid.upper_height = spline.interpolate(self.quadrature.quad_pt_offset)
 
-    def compute_energy(self, phase: np.ndarray):
-        self.phase_field.sample(phase)
-        [phi_interp, phi_grad] = self.phase_field.apply_operators(
-            [self.phase_field.interpolation, self.phase_field.gradient]
-        )
-        return self.quadrature.integrate2D(self.vapour_liquid.energy_density(phi_interp, phi_grad))
+        # Update the gap height
+        self.vapour_liquid.heterogeneous_height = self.solid_solid.gap_height()
 
-    def compute_energy_jacobian(self, phase: np.ndarray):
-        self.phase_field.sample(phase)
-        [phi_interp, phi_grad] = self.phase_field.apply_operators(
-            [self.phase_field.interpolation, self.phase_field.gradient]
+    def compute_energy(self, nodal_values: np.ndarray):
+        # update nodal values
+        self.phase_nodal_field.data = nodal_values
+        # interpolate values at quadrature points
+        phase_quad = self.evaluate_phase_quad()
+        phase_gradient_quad = self.evaluate_phase_gradient_quad()
+        # Evaluate the integrand and the integral
+        return self.quadrature.integrate(self.vapour_liquid.energy_density(phase_quad, phase_gradient_quad), self.grid)
+
+    def compute_volume(self, nodal_values: np.ndarray):
+        # update nodal values
+        self.phase_nodal_field.data = nodal_values
+        # interpolate values at quadrature points
+        phi_quad = self.evaluate_phase_quad()
+        # Evaluate the integrand and the integral
+        return self.quadrature.integrate(self.vapour_liquid.liquid_height(phi_quad), self.grid)
+
+    def compute_energy_jacobian(self, nodal_values: np.ndarray):
+        # update nodal values
+        self.phase_nodal_field.data = nodal_values
+        # interpolate values at quadrature points
+        phase_quad = self.evaluate_phase_quad()
+        phase_gradient_quad = self.evaluate_phase_gradient_quad()
+        # Get the model functions derivative w.r.t. the interpolated values
+        [self.energy_D_phase_quad_field.data, self.energy_D_phase_gradient_quad_field.data] = (
+            self.vapour_liquid.energy_density_sensitivity(phase_quad, phase_gradient_quad)
         )
-        return self.quadrature.pixel_area * self.phase_field.apply_transposed_to_values(
-            self.vapour_liquid.energy_density_sensitivity(phi_interp, phi_grad),
-            [self.phase_field.interpolation, self.phase_field.gradient],
+        # Multiply the last results with the derivative of interpolation w.r.t. the nodal values
+        energy_D_phase_quad_D_phase_nodal = self.evaluate_energy_D_phase_quad_D_phase_nodal()
+        energy_D_phase_gradient_quad_D_phase_nodal = (
+            self.evaluate_energy_D_phase_gradient_quad_D_phase_nodal()
+        )
+        # Sum up all contributing terms as in a total derivative
+        return self.grid.pixel_area * (
+            energy_D_phase_quad_D_phase_nodal + energy_D_phase_gradient_quad_D_phase_nodal
         )
 
-    def compute_volume(self, phase: np.ndarray):
-        self.phase_field.sample(phase)
-        [phi_interp, phi_grad] = self.phase_field.apply_operators(
-            [self.phase_field.interpolation, self.phase_field.gradient]
+    def compute_volume_jacobian(self, nodal_values: np.ndarray):
+        # update nodal values
+        self.phase_nodal_field.data = nodal_values
+        # interpolate values at quadrature points
+        phi_quad = self.evaluate_phase_quad()
+        # Get the model functions derivative w.r.t. the interpolated values
+        [self.volume_D_phase_quad_field.data] = self.vapour_liquid.liquid_height_sensitivity(
+            phi_quad
         )
-        return self.quadrature.integrate2D(self.vapour_liquid.energy_density(phi_interp, phi_grad))
+        # Multiply the last results with the derivative of interpolation w.r.t. the nodal values
+        volume_D_phase_quad_D_phase_nodal = self.evaluate_volume_D_phase_quad_D_phase_nodal()
+        # Sum up all contributing terms as in a total derivative
+        return self.grid.pixel_area * volume_D_phase_quad_D_phase_nodal
 
     def formulate_with_constant_volume(
         self,
         liquid_volume: float,
     ):
-        def f(x: np.ndarray) -> float:
-            phi = np.pad(x, 1, mode="constant", constant_values=-1)
-            return self.compute_energy(np.expand_dims(phi, axis=0))
+        # def f(x: np.ndarray) -> float:
+        #     phi = np.pad(x, 1, mode="constant", constant_values=-1)
+        #     return self.compute_energy(np.expand_dims(phi, axis=0))
 
-        self.solver.f = f
+        # self.solver.f = f
+        self.solver.f = lambda x: self.compute_energy(x)
 
-        def g(x: np.ndarray) -> float:
-            phi = np.pad(x, 1, mode="constant", constant_values=-1)
-            return self.compute_volume(np.expand_dims(phi, axis=0)) - liquid_volume
+        # def g(x: np.ndarray) -> float:
+        #     phi = np.pad(x, 1, mode="constant", constant_values=-1)
+        #     return self.compute_volume(np.expand_dims(phi, axis=0)) - liquid_volume
 
-        self.solver.g = g
+        # self.solver.g = g
+        self.solver.g = lambda x: self.compute_volume(x) - liquid_volume
 
         def l(x: np.ndarray, lam: float, c: float) -> float:
-            print(f"In l(x), x has datatype {x.dtype}")
-            phi = np.pad(x, 1, mode="constant", constant_values=-1)
-            self.phase_field.sample(np.expand_dims(phi, axis=0))
-            [phi_interp, phi_grad] = self.phase_field.apply_operators(
-                [self.phase_field.interpolation, self.phase_field.gradient]
-            )
-            f = self.quadrature.integrate2D(self.vapour_liquid.energy_density(phi_interp, phi_grad))
-            g = (
-                self.quadrature.integrate2D(self.vapour_liquid.liquid_height(phi_interp))
-                - liquid_volume
-            )
-            val = f + lam * g + 0.5 * c * g**2
-            print(f"In l(x), l has value {val}\n")
-            return val
+            # print(f"In l(x), x has datatype {x.dtype}")
+            # phi = np.pad(x, 1, mode="constant", constant_values=-1)
+            # self.phase_nodal_field.sample(np.expand_dims(phi, axis=0))
+            # [phi_interp, phi_grad] = self.phase_nodal_field.apply_operators(
+            #     [self.phase_nodal_field.interpolation, self.phase_nodal_field.gradient]
+            # )
+            # f = self.quadrature.integrate(self.liquid_vapour.energy_density(phi_interp, phi_grad))
+            # g = (
+            #     self.quadrature.integrate(self.liquid_vapour.liquid_height(phi_interp))
+            #     - liquid_volume
+            # )
+            # val = f + lam * g + 0.5 * c * g**2
+            # print(f"In l(x), l has value {val}\n")
+            # return val
+            # FIXME: avoid updating field two times
+            f = self.compute_energy(x)
+            g = self.compute_volume(x)
+            return f + lam * g + 0.5 * c * g**2
 
         self.solver.l = l
 
-        def dx_l(x: np.ndarray, lam: float, c: float) -> np.ndarray:
-            print(f"In dl(x), x has datatype {x.dtype}")
-            phi = np.pad(x, 1, mode="constant", constant_values=-1)
-            self.phase_field.sample(np.expand_dims(phi, axis=0))
-            [phi_interp, phi_grad] = self.phase_field.apply_operators(
-                [self.phase_field.interpolation, self.phase_field.gradient]
-            )
-            dx_f = self.quadrature.pixel_area * self.phase_field.apply_transposed_to_values(
-                self.vapour_liquid.energy_density_sensitivity(phi_interp, phi_grad),
-                [self.phase_field.interpolation, self.phase_field.gradient],
-            )
-            g = (
-                self.quadrature.integrate2D(self.vapour_liquid.liquid_height(phi_interp))
-                - liquid_volume
-            )
-            dx_g = self.quadrature.pixel_area * self.phase_field.apply_transposed_to_values(
-                self.vapour_liquid.liquid_height_sensitivity(phi_interp),
-                [self.phase_field.interpolation],
-            )
-            val = (dx_f + (lam + c * g) * dx_g)[self.grid.coordinator.non_ghost]
-            print(f"In dx_l(x), dx_l has shape {val.shape}, has values\n {val}\n")
-            return val
+        def l_D_x(x: np.ndarray, lam: float, c: float) -> np.ndarray:
+            # print(f"In dl(x), x has datatype {x.dtype}")
+            # phi = np.pad(x, 1, mode="constant", constant_values=-1)
+            # self.phase_nodal_field.sample(np.expand_dims(phi, axis=0))
+            # [phi_interp, phi_grad] = self.phase_nodal_field.apply_operators(
+            #     [self.phase_nodal_field.interpolation, self.phase_nodal_field.gradient]
+            # )
+            # dx_f = self.quadrature.pixel_area * self.phase_nodal_field.apply_transposed_to_values(
+            #     self.liquid_vapour.energy_density_sensitivity(phi_interp, phi_grad),
+            #     [self.phase_nodal_field.interpolation, self.phase_nodal_field.gradient],
+            # )
+            # g = (
+            #     self.quadrature.integrate(self.liquid_vapour.liquid_height(phi_interp))
+            #     - liquid_volume
+            # )
+            # dx_g = self.quadrature.pixel_area * self.phase_nodal_field.apply_transposed_to_values(
+            #     self.liquid_vapour.liquid_height_sensitivity(phi_interp),
+            #     [self.phase_nodal_field.interpolation],
+            # )
+            # val = (dx_f + (lam + c * g) * dx_g)[self.grid.coordinator.non_ghost]
+            # print(f"In dx_l(x), dx_l has shape {val.shape}, has values\n {val}\n")
+            # return val
+            # FIXME: avoid updating field two times
+            f_D_x = self.compute_energy_jacobian(x)
+            g_D_x = self.compute_volume_jacobian(x)
+            return f_D_x + (lam + c * g_D_x) * g_D_x
 
-        self.solver.dx_l = dx_l
+        self.solver.dx_l = l_D_x
 
     def simulate_with_trajectory(
         self,
@@ -235,7 +360,7 @@ class CapillaryBridge:
         print(f"Simulating for all {len(trajectory)} displacements.")
 
         # Only non-ghost pixels are decision variables
-        x = init_guess[self.grid.coordinator.non_ghost]
+        x = init_guess
 
         # Simulation
         steps = []
