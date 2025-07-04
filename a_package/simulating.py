@@ -256,14 +256,16 @@ class CapillaryBridge:
             self.vapour_liquid.energy_density_sensitivity(phase_quad, phase_gradient_quad)
         )
         # Multiply the last results with the derivative of interpolation w.r.t. the nodal values
+        # FIXME: this will trigger "communicate_ghosts" twice. Maybe use Convolution Operator's weight?
+        integral_sensitivity = self.quadrature.get_input_sensitivity(self.grid)
+        self.energy_D_phase_quad_field.data = integral_sensitivity * self.energy_D_phase_quad_field.data
         energy_D_phase_quad_D_phase_nodal = self.evaluate_energy_D_phase_quad_D_phase_nodal()
+        self.energy_D_phase_gradient_quad_field.data = integral_sensitivity * self.energy_D_phase_gradient_quad_field.data
         energy_D_phase_gradient_quad_D_phase_nodal = (
             self.evaluate_energy_D_phase_gradient_quad_D_phase_nodal()
         )
-        # Sum up all contributing terms as in a total derivative
-        return 0.5*self.grid.pixel_area * (
-            energy_D_phase_quad_D_phase_nodal + energy_D_phase_gradient_quad_D_phase_nodal
-        )
+        # Sum up all contributing terms as in a total derivative 
+        return energy_D_phase_quad_D_phase_nodal + energy_D_phase_gradient_quad_D_phase_nodal
 
     def compute_volume_jacobian(self, nodal_values: np.ndarray):
         # update nodal values
@@ -275,10 +277,13 @@ class CapillaryBridge:
             phase_quad
         )
         # Multiply the last results with the derivative of interpolation w.r.t. the nodal values
+        # FIXME: this will trigger "communicate_ghosts" twice. Maybe use Convolution Operator's weight?
+        integral_sensitivity = self.quadrature.get_input_sensitivity(self.grid)
+        self.volume_D_phase_quad_field.data = integral_sensitivity * self.volume_D_phase_quad_field.data
         volume_D_phase_quad_D_phase_nodal = self.evaluate_volume_D_phase_quad_D_phase_nodal()
+
         # Sum up all contributing terms as in a total derivative
-        # FIXME: try to move this triangle area thing to where integral happens
-        return 0.5*self.grid.pixel_area * volume_D_phase_quad_D_phase_nodal
+        return volume_D_phase_quad_D_phase_nodal
 
     def formulate_with_constant_volume(
         self,

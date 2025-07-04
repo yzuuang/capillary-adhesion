@@ -238,11 +238,30 @@ class Quadrature:
     quad_pt_offset: np.ndarray
     quad_pt_weights: np.ndarray
 
+    def __post_init__(self):
+        assert self.quad_pt_offset.shape == (self.nb_quad_pts, self.nb_dims)
+        assert self.quad_pt_weights.shape == (self.nb_quad_pts,)
+        assert self.quad_pt_weights.sum() == 1.0
+
     def integrate(self, integrand: np.ndarray, grid: Grid):
-        # Sum over quadrature points (weighted) and over all pixels (equally)
-        local_sum = np.einsum("cs..., s-> c...", integrand, self.quad_pt_weights)
-        local_sum = grid.pixel_area * np.sum(local_sum, axis=tuple(range(-self.nb_dims, 0)))
-        return grid.sum(local_sum)
+        # Finally, sum over all sections (parallel communication)
+        return grid.sum(
+            # Then, sum over quadrature points (weighted)
+            np.einsum(
+                "cs, s-> c",
+                # First, sum over all pixels (equally, because all pixels have the same area on 
+                # a regular grid)
+                grid.pixel_area * np.sum(integrand, axis=tuple(range(-grid.nb_dims, 0))),
+                self.quad_pt_weights,
+            )
+        )
+
+    def get_input_sensitivity(self, grid: Grid):
+        # All pixels have the same area on a regular grid, therefore, the difference only lies in 
+        # the quadrature weights
+        return np.expand_dims(
+            self.quad_pt_weights * grid.pixel_area, axis=tuple(range(-grid.nb_dims, 0))
+        )
 
 
 centroid_quadrature = Quadrature(
