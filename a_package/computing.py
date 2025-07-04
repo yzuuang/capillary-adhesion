@@ -5,7 +5,6 @@
 - Quadrature (numerical integration) of functions of fields
 """
 
-import abc
 import dataclasses as dc
 import typing as _t
 
@@ -249,7 +248,7 @@ class Quadrature:
             # Then, sum over quadrature points (weighted)
             np.einsum(
                 "cs, s-> c",
-                # First, sum over all pixels (equally, because all pixels have the same area on 
+                # First, sum over all pixels (equally, because all pixels have the same area on
                 # a regular grid)
                 grid.pixel_area * np.sum(integrand, axis=tuple(range(-grid.nb_dims, 0))),
                 self.quad_pt_weights,
@@ -257,8 +256,8 @@ class Quadrature:
         )
 
     def get_input_sensitivity(self, grid: Grid):
-        # All pixels have the same area on a regular grid, therefore, the difference only lies in 
-        # the quadrature weights
+        # All pixels have the same area on a regular grid, therefore, the difference only lies
+        # in the quadrature weights
         return np.expand_dims(
             self.quad_pt_weights * grid.pixel_area, axis=tuple(range(-grid.nb_dims, 0))
         )
@@ -272,7 +271,7 @@ centroid_quadrature = Quadrature(
     quad_pt_weights=np.array([0.5, 0.5]),
 )
 """Numerical intergration with quadrature points located at the centroid of the two triangles of
-each pixel. It provides discrete operators for interpolation and gradient.
+each pixel.
 """
 
 
@@ -294,7 +293,9 @@ class CubicSpline:
     def sample(self, field: Field):
         assert field.section.nb_components == 1
         data = np.squeeze(field.section.sg)
-        self.interpolator = RegularGridInterpolator(self.sample_location_in_each_axis, data, method="cubic")
+        self.interpolator = RegularGridInterpolator(
+            self.sample_location_in_each_axis, data, method="cubic"
+        )
 
     def interpolate(self, offset_in_pixel: np.ndarray):
         """
@@ -306,14 +307,17 @@ class CubicSpline:
         result = np.empty([nb_sub_pts, *self.nb_pixels])
         for idx, loc in enumerate(offset_in_pixel):
             # Sum arrays with shape (nb_dims, nb_x, nb_y) and (nb_dims,)
-            interp_location = self.pixel_origin_location + np.expand_dims(loc, axis=tuple(range(-self.nb_dims, 0)))
+            interp_location = self.pixel_origin_location + np.expand_dims(
+                loc, axis=tuple(range(-self.nb_dims, 0))
+            )
             result[idx] = self.interpolator(tuple(interp_location))
         # Keep the convention that 0-axis covers components
         return np.expand_dims(result, axis=0)
 
 
 class Linear2DFiniteElementInPixel:
-    """A unit pixel discretized with linear finite element basis.
+    """A unit pixel discretized with linear finite element basis. It provides discrete operators
+    for interpolation and gradient on pre-specified locations.
 
     The vertices of the pixel are (0,0), (1,0), (0,1), (1,1). It is divided into two triangles by
     the line connecting vertices (1,0) and (0,1), x_1 + x_2 = 1. The triangle with (0,0) vertice is
@@ -342,10 +346,10 @@ class Linear2DFiniteElementInPixel:
         for i, (x1, x2) in enumerate(offset_in_pixel):
             if x1 + x2 < 1:
                 # Lower triangle
-                res[:,i] = self.lower_triangle_shape_function(x1, x2)
+                res[:, i] = self.lower_triangle_shape_function(x1, x2)
             else:
                 # Upper triangle
-                res[:,i] = self.upper_triangle_shape_function(x1, x2)
+                res[:, i] = self.upper_triangle_shape_function(x1, x2)
         return res
 
     @staticmethod

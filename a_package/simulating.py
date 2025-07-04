@@ -235,7 +235,9 @@ class CapillaryBridge:
         phase_quad = self.evaluate_phase_quad()
         phase_gradient_quad = self.evaluate_phase_gradient_quad()
         # Evaluate the integrand and the integral
-        return self.quadrature.integrate(self.vapour_liquid.energy_density(phase_quad, phase_gradient_quad), self.grid)
+        return self.quadrature.integrate(
+            self.vapour_liquid.energy_density(phase_quad, phase_gradient_quad), self.grid
+        )
 
     def compute_volume(self, nodal_values: np.ndarray):
         # update nodal values
