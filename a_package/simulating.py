@@ -175,7 +175,7 @@ class CapillaryBridge:
             "energy_D_phase_gradient_quad", self.grid.nb_dims, self.quadrature.tag
         )
         energy_D_phase_gradient_quad_D_phase_nodal_field = self.grid.real_field(
-            "energy_D_phase_quad_D_phase_nodal", 1, "pixel"
+            "energy_D_phase_gradient_quad_D_phase_nodal", 1, "pixel"
         )
         self.evaluate_energy_D_phase_gradient_quad_D_phase_nodal = (
             self.energy_D_phase_gradient_quad_field.bind_mapping_sensitivity(
