@@ -261,7 +261,7 @@ class CapillaryBridge:
             self.evaluate_energy_D_phase_gradient_quad_D_phase_nodal()
         )
         # Sum up all contributing terms as in a total derivative
-        return self.grid.pixel_area * (
+        return 0.5*self.grid.pixel_area * (
             energy_D_phase_quad_D_phase_nodal + energy_D_phase_gradient_quad_D_phase_nodal
         )
 
@@ -269,15 +269,16 @@ class CapillaryBridge:
         # update nodal values
         self.phase_nodal_field.data = nodal_values
         # interpolate values at quadrature points
-        phi_quad = self.evaluate_phase_quad()
+        phase_quad = self.evaluate_phase_quad()
         # Get the model functions derivative w.r.t. the interpolated values
         [self.volume_D_phase_quad_field.data] = self.vapour_liquid.liquid_height_sensitivity(
-            phi_quad
+            phase_quad
         )
         # Multiply the last results with the derivative of interpolation w.r.t. the nodal values
         volume_D_phase_quad_D_phase_nodal = self.evaluate_volume_D_phase_quad_D_phase_nodal()
         # Sum up all contributing terms as in a total derivative
-        return self.grid.pixel_area * volume_D_phase_quad_D_phase_nodal
+        # FIXME: try to move this triangle area thing to where integral happens
+        return 0.5*self.grid.pixel_area * volume_D_phase_quad_D_phase_nodal
 
     def formulate_with_constant_volume(
         self,
