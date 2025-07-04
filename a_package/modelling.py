@@ -133,7 +133,7 @@ class CapillaryVapourLiquid:
         return self.heterogeneous_height * phi
 
     def liquid_height_sensitivity(self, phi: Components_t):
-        return [self.heterogeneous_height]
+        return [self.heterogeneous_height * np.ones_like(phi)]
 
     def adhesive_force(self, phi: Components_t, d_phi: Components_t):
         raise NotImplementedError("We don't have explicit dependency of phase-field to gap height.")
