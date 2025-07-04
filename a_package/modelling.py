@@ -33,7 +33,7 @@ class SelfAffineRoughness:
 
     def isotropic_spectrum(self, wave_numbers: Components_t):
         # Isotropic, so it only depends on its magnitude
-        magnitude = np.expand_dims(la.norm(wave_numbers, ord=2, axis=0), axis=0)
+        magnitude = la.norm(wave_numbers, ord=2, axis=0, keepdims=True)
 
         # Find three regimes
         constant = magnitude < self.qR
@@ -98,7 +98,7 @@ class CapillaryVapourLiquid:
 
     @staticmethod
     def square_penalty(x):
-        return np.expand_dims(np.sum(x**2, axis=0), axis=0)
+        return np.sum(x**2, axis=0, keepdims=True)
 
     def energy_density_sensitivity(self, phi: Components_t, d_phi: Components_t):
         area_water_vapour_sens_phi = self.heterogeneous_height * (
