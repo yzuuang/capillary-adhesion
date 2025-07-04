@@ -252,19 +252,21 @@ class CapillaryBridge:
         phase_quad = self.evaluate_phase_quad()
         phase_gradient_quad = self.evaluate_phase_gradient_quad()
         # Get the model functions derivative w.r.t. the interpolated values
-        [self.energy_D_phase_quad_field.data, self.energy_D_phase_gradient_quad_field.data] = (
+        [energy_D_phase_quad, energy_D_phase_gradient_quad] = (
             self.vapour_liquid.energy_density_sensitivity(phase_quad, phase_gradient_quad)
         )
-        # Multiply the last results with the derivative of interpolation w.r.t. the nodal values
-        # FIXME: this will trigger "communicate_ghosts" twice. Maybe use Convolution Operator's weight?
+        # Backward AD: first multiply the senitivity of the integral and the model function
         integral_sensitivity = self.quadrature.get_input_sensitivity(self.grid)
-        self.energy_D_phase_quad_field.data = integral_sensitivity * self.energy_D_phase_quad_field.data
+        self.energy_D_phase_quad_field.data = integral_sensitivity * energy_D_phase_quad
+        self.energy_D_phase_gradient_quad_field.data = (
+            integral_sensitivity * energy_D_phase_gradient_quad
+        )
+        # Backward AD: then multiply it with the sensitivity of the interpolation
         energy_D_phase_quad_D_phase_nodal = self.evaluate_energy_D_phase_quad_D_phase_nodal()
-        self.energy_D_phase_gradient_quad_field.data = integral_sensitivity * self.energy_D_phase_gradient_quad_field.data
         energy_D_phase_gradient_quad_D_phase_nodal = (
             self.evaluate_energy_D_phase_gradient_quad_D_phase_nodal()
         )
-        # Sum up all contributing terms as in a total derivative 
+        # Sum up all contributing terms as in a total derivative
         return energy_D_phase_quad_D_phase_nodal + energy_D_phase_gradient_quad_D_phase_nodal
 
     def compute_volume_jacobian(self, nodal_values: np.ndarray):
@@ -273,15 +275,12 @@ class CapillaryBridge:
         # interpolate values at quadrature points
         phase_quad = self.evaluate_phase_quad()
         # Get the model functions derivative w.r.t. the interpolated values
-        [self.volume_D_phase_quad_field.data] = self.vapour_liquid.liquid_height_sensitivity(
-            phase_quad
-        )
-        # Multiply the last results with the derivative of interpolation w.r.t. the nodal values
-        # FIXME: this will trigger "communicate_ghosts" twice. Maybe use Convolution Operator's weight?
+        [volume_D_phase_quad] = self.vapour_liquid.liquid_height_sensitivity(phase_quad)
+        # Backward AD: first multiply the senitivity of the integral and the model function
         integral_sensitivity = self.quadrature.get_input_sensitivity(self.grid)
-        self.volume_D_phase_quad_field.data = integral_sensitivity * self.volume_D_phase_quad_field.data
+        self.volume_D_phase_quad_field.data = integral_sensitivity * volume_D_phase_quad
+        # Backward AD: then multiply it with the sensitivity of the interpolation
         volume_D_phase_quad_D_phase_nodal = self.evaluate_volume_D_phase_quad_D_phase_nodal()
-
         # Sum up all contributing terms as in a total derivative
         return volume_D_phase_quad_D_phase_nodal
 
