@@ -1,81 +1,62 @@
-"""
-Tests of the `modelling.py` file.
-"""
-
-import math
-import sys
-
 import numpy as np
-import matplotlib.pyplot as plt
+import numpy.random as random
+from a_package.modelling import CapillaryVapourLiquid
 
-from a_package.modelling import Region, CapillaryBridge
-
-
-show_me_plot = False
+from .utilities import *
 
 
-def test_capillary_bridge_compute_energy_jacobian():
-    L = 10.0
-    N = 10
-    region = Region(L, L, N, N)
+rng = random.default_rng()
 
-    eta = L / N
-    gamma = 0.2
 
-    xm, ym = np.meshgrid(region.x, region.y)
-    # A ball on top and a flat plate on base
-    h1 = L * np.sqrt(1 - (xm/L - 0.5)**2 - (ym/L - 0.5)**2)
-    h2 = np.zeros_like(h1)
+def test_energy_density_sensitivity():
+    # A not too big random field
+    test_size = 5
+    vapour_liquid = CapillaryVapourLiquid(1.0, 0.5, rng.normal(0.0, size=(1, test_size)))
+    phi = rng.random(size=(1, test_size))
+    phi_grad = rng.random(size=(2, test_size))
 
-    # A circular phase field
-    phi = np.ones_like(h1)
-    phi[(xm/L)**2 + (ym/L)**2 >= 0.5] = 0.0
+    # Implemented
+    [e_D_phi, e_D_phi_grad] = vapour_liquid.energy_density_sensitivity(phi, phi_grad)
 
-    # Some displacement of the top body
-    capi = CapillaryBridge(region, eta, gamma, h1, h2)
-    capi.ix1_iy1 = (1, 2)
-    capi.z1 = 3 * eta
-    capi.update_gap()
+    # Finite difference
+    def call_with_one_arg(arg):
+        phi = arg[0]
+        phi_grad = arg[-2:]
+        return vapour_liquid.energy_density(phi, phi_grad)
+    arg = np.concatenate([phi, phi_grad], axis=0)
+    delta = 1e-4
+    ref = central_difference_jacobian(call_with_one_arg, arg, delta)
+    ref_e_D_phi = ref[0]
+    ref_e_D_phi_grad = ref[-2:]
 
-    # All the step lengths to be used for finite difference computation
-    lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))  # machine precision determined
-    highest_magnitude = 1
-    deltas = np.pow(10.0, np.arange(lowest_magnitude, highest_magnitude))
+    # Because in "modellling", all functions only modify the "components" axis, and don't touch
+    # the "grid shape", every data point is independent.
+    ref_e_D_phi = ref_e_D_phi[np.nonzero(ref_e_D_phi)].reshape(e_D_phi.shape)
+    ref_e_D_phi_grad = ref_e_D_phi_grad[np.nonzero(ref_e_D_phi_grad)].reshape(e_D_phi_grad.shape)
 
-    # Compute jacobian numerically (2-order finite difference)
-    numeric_jacobian = np.empty((deltas.size, phi.size))
-    capi.phi = phi
-    for i, delta in enumerate(deltas):
-        for j1, j2 in np.ndindex(phi.shape):
-            phi[j1, j2] += delta
-            capi.update_phase_field()
-            plus_val = capi.inner.compute_energy()
-            phi[j1, j2] -= 2*delta
-            capi.update_phase_field()
-            minus_val = capi.inner.compute_energy()
-            numeric_jacobian[i, j1*region.ny + j2] = (plus_val - minus_val) / delta * 0.5
+    # Assertions
+    assert np.allclose(e_D_phi, ref_e_D_phi)
+    assert np.allclose(e_D_phi_grad, ref_e_D_phi_grad)
 
-            phi[j1, j2] += delta
 
-    # Compute jacobian from the implementation
-    capi.update_phase_field()
-    impl_jacobian = capi.inner.compute_energy_jacobian()
 
-    # Measure the difference
-    diffs = np.amax(abs(impl_jacobian[np.newaxis, :] - numeric_jacobian), axis=1)
+def test_liquid_height_sensitivity():
+    # A not too big random field
+    test_size = 5
+    vapour_liquid = CapillaryVapourLiquid(1.0, 0.5, rng.normal(0.0, size=(1, test_size)))
+    phase = rng.random(size=(1, test_size))
 
-    # Plots
-    if show_me_plot:
-        plt.plot(deltas, diffs , "x-",
-                 label=r"Difference from a numerical method of $\mathcal{O}(\delta^2)$")
+    # Implemented
+    [h_D_phi] = vapour_liquid.liquid_height_sensitivity(phase)
 
-        plt.loglog()
-        plt.xlabel(r"$\delta$")
-        plt.ylabel(r"$\varepsilon$")
-        plt.legend()
+    # Finite difference
+    delta = 1e-4
+    ref_h_D_phi = np.squeeze(central_difference_jacobian(vapour_liquid.liquid_height, phase, delta))
 
-        plt.show()
+    # Because in "modellling", all functions only modify the "components" axis, and don't touch
+    # the "grid shape", every data point is independent.
+    ref_h_D_phi = ref_h_D_phi[np.nonzero(ref_h_D_phi)].reshape(h_D_phi.shape)
+
 
     # Assertion
-    eps = 1e-6
-    assert min(diffs) < eps, f"The difference exceeds the tolerance {eps:.2e}"
+    assert np.allclose(h_D_phi, ref_h_D_phi)

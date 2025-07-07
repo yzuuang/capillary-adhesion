@@ -1,431 +1,145 @@
-"""
-The physical perspective of the capillary bridge.
+"""This file addresses the physical perspectives.
+
+- Roughness of the solid surface
+- The "gap" formed between two solid surface with displacement
+- Capillary bridge
+
+NOTE: The model should be agonistic to discretization details, so functions in this file should
+be limited to Field(s) -> Field(s) relations. Operators such as integral and differential are thus
+implemented in "computing".
 """
 
 import dataclasses as dc
+import typing as _t
 
 import numpy as np
-import numpy.fft as fft
-import numpy.random as random
-import scipy.sparse as sparse
-from SurfaceTopography.Uniform.Interpolation import Bicubic
-
-from a_package.solving import NumOptEq
+import numpy.linalg as la
 
 
-@dc.dataclass
-class Region:
-    """A discrete space in 2D."""
-    lx: float
-    ly: float
-    nx: int
-    ny: int
+Components_t: _t.TypeAlias = np.ndarray
+"""An array with the first dimension always corresponds to the number of components. One should 
+consider other dimensions unknown (ravelled) because they are related to discretization.
 
-    def __post_init__(self):
-        self.dx = self.lx / self.nx
-        self.x = np.arange(self.nx) * self.dx
-        self.qx = (2 * np.pi) * fft.fftfreq(self.nx, self.dx)
-
-        self.dy = self.ly / self.ny
-        self.y = np.arange(self.ny) * self.dy
-        self.qy = (2 * np.pi) * fft.fftfreq(self.ny, self.dy)
-
-        self.xm, self.ym = np.meshgrid(self.x, self.y)
+# NOTE: always keep the axis of components even if #components == 1.
+"""
 
 
-def wavevector_norm(*q):
-    # from N-axis to N-component of coordinates
-    q_mesh = np.meshgrid(*q)
-    # coordinates to norms
-    return np.sqrt(sum(q_i ** 2 for q_i in q_mesh))
-
-
-@dc.dataclass
+@dc.dataclass(init=True)
 class SelfAffineRoughness:
     C0: float
     qR: float
     qS: float
     H: float
 
-    def mapto_psd(self, q: np.ndarray):
-        C = np.empty_like(q)
-        C[q < self.qR] = self.C0 * self.qR ** (-2 - 2 * self.H)
-        self_affine_regime = (q >= self.qR) & (q < self.qS)
-        C[self_affine_regime] = self.C0 * q[self_affine_regime] ** (-2 - 2 * self.H)
-        C[q >= self.qS] = 0
-        return C
+    def isotropic_spectrum(self, wave_numbers: Components_t):
+        # Isotropic, so it only depends on its magnitude
+        magnitude = la.norm(wave_numbers, ord=2, axis=0, keepdims=True)
+
+        # Find three regimes
+        constant = magnitude < self.qR
+        self_affine = (magnitude >= self.qR) & (magnitude < self.qS)
+        omitted = magnitude >= self.qS
+
+        # Evaluate accordingly
+        psd = np.full_like(magnitude, np.nan)
+        psd[constant] = self.C0 * self.qR ** (2 - 2 * self.H)
+        psd[self_affine] = self.C0 * magnitude[self_affine] ** (-2 - 2 * self.H)
+        psd[omitted] = 0
+
+        # Return both in convenience of plotting
+        return magnitude, psd
 
 
-def PSD_to_height(C: np.ndarray, rng=None, seed=None):
-    # <h^2> corresponding to PSD, thus, take the square-root
-    h_norm = np.sqrt(C)
+@dc.dataclass(init=True)
+class SolidSolidContact:
+    """Contact between two rough solid planes."""
 
-    # impose some random phase angle
-    if rng is None:
-        rng = random.default_rng(seed)
-    phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, C.shape))
+    lower_height: Components_t
+    upper_height: Components_t
+    mean_plane_separation: float
 
-    return fft.ifftn(h_norm * phase_angle).real
+    def gap_height(self):
+        """The gap between two rough surface where a thrid matter can exist.
+
+        Assume interpenaltration, so clip all negative values to zero.
+        """
+        return np.clip(
+            self.upper_height - self.lower_height + self.mean_plane_separation, a_min=0, a_max=None
+        )
 
 
-@dc.dataclass
-class CapillaryBridge:
-    """All necessary parameters for visualizing a capillary bridge.
+@dc.dataclass(init=True)
+class CapillaryVapourLiquid:
 
-    Data attributes: field is stored with nodal values as 2D array.
-    1 refer to the solid top; 2 refer to the solid base.
-    """
-    region: Region
-    eta: float
-    gamma: float  # surface tensions: (SL - SG) / LG
-    h1: np.ndarray
-    h2: np.ndarray
-    ix1_iy1: tuple[int, int] = None
-    z1: float = 0.
-    g: np.ndarray = None
-    no_gap: np.ndarray = None
-    phi: np.ndarray = None
-
-    def __post_init__(self):
-        if self.ix1_iy1 is None:
-            self.ix1_iy1 = (0, 0)
-        h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
-        self.interp_h1 = Bicubic(h1_origin, periodic=True)
-        self.inner = ComputeCapillary(self.region, self.eta, self.gamma)
-
-    def update_gap(self):
-        # Lateral displacement of the solid top
-        # NOTE: assume periodic boundary
-        self.h1 = self.interp_h1(self.region.xm - self.ix1_iy1[0], self.region.ym - self.ix1_iy1[1])
-        # Gap
-        self.g = self.h1 + self.z1 - self.h2
-
-        # Check where the top and the base collide
-        self.no_gap = self.g < 0
-        # NOTE: assume interpenetration
-        self.g[self.no_gap] = 0
-
-        # Call the inner class method
-        self.inner.update_gap(self.h1.ravel(), self.h2.ravel(), self.g.ravel())
-
-    def update_phase_field(self):
-        # Clean the phase-field where the solid bodies contact
-        self.phi[self.no_gap] = 0
-
-        # Call the inner class method
-        self.inner.update_phase_field(self.phi.ravel())
+    interfacial_width: float
+    surface_tension_ratio: float
+    heterogeneous_height: Components_t
 
     @property
-    def displacement(self):
-        return np.array([
-            self.ix1_iy1[0] * self.region.dx,
-            self.ix1_iy1[1] * self.region.dy,
-            self.z1
-        ])
-
-    @property
-    def volume(self):
-        return self.inner.compute_volume()
-
-    @property
-    def energy(self):
-        return self.inner.compute_energy()
-
-    @property
-    def force(self):
-        return self.inner.compute_force()
-
-    def formulate_with_constant_volume(self, volume: float):
-        def objective(x: np.ndarray):
-            self.inner.update_phase_field(x)
-            return self.inner.compute_energy()
-
-        def objective_jacobian(x: np.ndarray):
-            self.inner.update_phase_field(x)
-            return self.inner.compute_energy_jacobian()
-
-        def constraint(x: np.ndarray):
-            self.inner.update_phase_field(x)
-            return self.inner.compute_volume() - volume
-
-        def constraint_jacobian(x: np.ndarray):
-            self.inner.update_phase_field(x)
-            return self.inner.compute_volume_jacobian()
-
-        return NumOptEq(objective, objective_jacobian, constraint, constraint_jacobian)
-
-    def validate_phase_field(self):
-
-        # phase field < 0
-        if np.any(self.phi < 0):
-            outlier = np.where(self.phi < 0, self.phi, np.nan)
-            count = np.count_nonzero(~np.isnan(outlier))
-            extreme = np.nanmin(outlier)
-            print(f"Notice: phase field has {count} values < 0, min at {extreme:.2e}")
-
-        # phase field > 1
-        if np.any(self.phi > 1):
-            outlier = np.where(self.phi > 1, self.phi, np.nan)
-            count = np.count_nonzero(~np.isnan(outlier))
-            extreme = np.nanmax(outlier)
-            print(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
-
-
-class ComputeCapillary:
-    """Inner class
-    
-    Data attributes: field is stored with values of elements as 1D array (fast computation).
-
-    Methods: most are computation that will be used for optimization. 
-    Integral of double well potential is evaluated via a centroid rule of Quadrature for triangles.
-    """
-
-    def __init__(self, region: Region, eta: float, gamma: float):
-        # Number of pixels
-        n_pixel = region.nx * region.ny
-        # 2 triangle elements per pixel
-        n_element = 2 * n_pixel
-        # Area of one element
-        self.element_area = 0.5 * region.dx * region.dy
-        # FE interpolation
-        self.map = FirstOrderElement(region)
-
-        # Copy simple parameters
-        self.eta = eta
-        self.gamma = gamma
-        self.no_gamma = np.isclose(gamma, 0)
-
-        # The gap between two solid bodies
-        self.g = np.empty((n_element))
-        self.dg_dx = np.empty((n_element))
-        self.dg_dy = np.empty((n_element))
-
-        # Highest polynomial degree for computation
-        poly_degr = 4
-        # The phase-field and its powers; each stored as a column of a 2D array. 
-        self.phi_powers = np.empty((poly_degr, n_element))
-        """    
-            Index  0 -- phi, set with 'update_phase_field';
-            Index  1 -- phi^2, update with 'compute_energy', 'compute_energy_jacobian';
-            Index  2 -- phi^3, update with 'compute_energy', 'compute_energy_jacobian';
-            Index  3 -- phi^4, update with 'compute_energy'.
-        """
-        # The gradient of phase-field
-        self.dphi_dx = np.empty((n_element))
-        self.dphi_dy = np.empty((n_element))
-
-        # Number of quadrature points per triangle element
-        # n_quadrature = 1
-        # NOTE: Though 1 quadrature point at the centroid can only approximates an integral of
-        # a 4th oder polynomial, it seems sufficient to yield a solution in numerical experiments. 
-        # weight = np.ones((1, n_quadrature * n_elem), dtype=float)
-
-    def update_gap(self, h1: np.ndarray, h2: np.ndarray, g: np.ndarray):
-        """
-        h1 --- nodal value, flat.
-        h2 --- nodal value, flat.
-        g --- nodal value, flat.
-        """
-
-        self.g = self.map.K_centroid @ g
-        self.dg_dx = self.map.Dx @ g
-        self.dg_dy = self.map.Dy @ g
-        # dg_dz = 1
-
-        # if self.no_gamma:
-        #     self.solid_surface = None
-        #     return
-
-        # surface area
-        dh1_dx = self.map.Dx @ h1
-        dh1_dy = self.map.Dy @ h1
-        h1_surface = np.sqrt(dh1_dx**2 + dh1_dy**2 + 1)
-        dh2_dx = self.map.Dx @ h2
-        dh2_dy = self.map.Dy @ h2
-        h2_surface = np.sqrt(dh2_dx**2 + dh2_dy**2 + 1)
-        self.solid_surface = h1_surface + h2_surface
-        # TODO:
-        # compute (dxd)h dh for computing forces later
-
-        # remove surface area at solid-solid contact
-        self.solid_surface[self.g == 0] = 0
-
-    def update_phase_field(self, phi: np.ndarray):
-        """
-        phi --- nodal value, flat.
-        """
-        self.phi_powers[0] = self.map.K_centroid @ phi
-        self.dphi_dx = self.map.Dx @ phi
-        self.dphi_dy = self.map.Dy @ phi
-
-    def compute_energy(self) -> float:
-        # NOTE: this is not the 'true' free energy, as the constant term of gamma_SV A_region is removed
-        # update necessary power terms
-        self.phi_powers[1] = self.phi_powers[0] ** 2
-        self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
-        self.phi_powers[3] = self.phi_powers[1] ** 2
-
-        # compute water-vapour surface area
-        # compute at quadrature points: (1/eta) (phi^2 - 2 phi^3 + phi^4)
-        double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
-        # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
-        perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
-        area_water_vapour = (double_well + perimeter) * self.g
-
-        # if self.no_gamma:
-        #     return area_water_vapour.sum() * self.element_area
-
-        # compute water-solid surface area
-        area_water_solid = self.solid_surface * self.phi_powers[0]
-
-        # return surface energy
-        return (area_water_vapour.sum() + self.gamma * area_water_solid.sum()) * self.element_area
-
-    def compute_force(self):
-        # update necessary power terms
-        self.phi_powers[1] = self.phi_powers[0] ** 2
-        self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
-        self.phi_powers[3] = self.phi_powers[1] ** 2
-
-        # the common part of 3 components
-        # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
-        perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
-        # compute at quadrature points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
-        double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
-        de_dg = (double_well + perimeter)
-
-        # the different part of 3 components
-        f_x = (de_dg * self.dg_dx).sum()
-        f_y = (de_dg * self.dg_dy).sum()
-        # dg_dz = 1
-        f_z = de_dg.sum()
-
-        # TODO: add contribution of water-solid interface
-        # h1_common = np.pow(self.dh1_dx**2 + self.dh1_dy**2 + 1, -1/2)
-        # water_h1_jacobian = (h1_common * self.dh1_dx) @ self.map.Dx + (h1_common * self.dh1_dy) @ self.map.Dy
-        # h2_common = np.pow(self.dh2_dx**2 + self.dh2_dy**2 + 1, -1/2)
-        # water_h2_jacobian = (h2_common * self.dh2_dx) @ self.map.Dx + (h2_common * self.dh2_dy) @ self.map.Dy
-        # area_water_solid_jacobian = self.beta * (water_h1_jacobian + water_h2_jacobian)
-
-        return np.array([f_x, f_y, f_z]) * self.element_area
-
-    def compute_energy_jacobian(self) -> np.ndarray:
-        # update necessary power terms
-        self.phi_powers[1] = self.phi_powers[0] ** 2
-        self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
-        
-        # Contribution of water-vapour surface
-        # constant within the element: 2 eta g (Dx phi Dx + Dy phi Dy)
-        perimeter_jacobian = (2 * self.eta) * ((self.g * self.dphi_dx) @ self.map.Dx + 
-                                               (self.g * self.dphi_dy) @ self.map.Dy)
-        # compute at quadrature points: (2/eta) g (phi - 3 phi^2 + phi^3)
-        double_well_jacobian = (2 / self.eta) * ((self.phi_powers[0] - 3 * self.phi_powers[1] +
-                                                  2 * self.phi_powers[2]) * self.g) @ self.map.K_centroid
-
-        # area of water-vapour interface
-        area_water_vapour_jacobian = double_well_jacobian + perimeter_jacobian
-
-        # if self.no_gamma:
-        #     return area_water_vapour_jacobian * self.element_area
-
-        # Contribution of water-solid surface
-        area_water_solid_jacobian = self.solid_surface @ self.map.K_centroid
-
-        return (area_water_vapour_jacobian + self.gamma * area_water_solid_jacobian) * self.element_area
-
-    def compute_volume(self) -> float:
-        return (self.g * self.phi_powers[0]).sum() * self.element_area
-
-    def compute_volume_jacobian(self) -> np.ndarray:
-        return (self.g @ self.map.K_centroid) * self.element_area
-
-
-class FirstOrderElement:
-    """
-    Create matrices that maps a vector of nodal values into a vector of values of interest in finite elements. 
-
-    Field is interpolated by triangular linear finite elements: 'a + b*xi + c*eta', with 'a' located at the 
-    centroid. Gradient values are thus constant: '(b / dx, c / dy)'.
-    """
-    K_centroid: np.ndarray
-    Dx: np.ndarray
-    Dy: np.ndarray
-
-    def __init__(self, region: Region):
-        M = region.nx
-        N = region.ny
-        MN = M * N
-
-        # K_a maps \phi grid points to central of the triangles, which are the quadrature points
-        K_a_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_a_lower, (0, 0), (M, N), 1 / 3)
-        fill_cyclic_diagonal_2d(K_a_lower, (0, 1), (M, N), 1 / 3)
-        fill_cyclic_diagonal_2d(K_a_lower, (1, 0), (M, N), 1 / 3)
-
-        K_a_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_a_upper, (0, 1), (M, N), 1 / 3)
-        fill_cyclic_diagonal_2d(K_a_upper, (1, 0), (M, N), 1 / 3)
-        fill_cyclic_diagonal_2d(K_a_upper, (1, 1), (M, N), 1 / 3)
-
-        self.K_centroid = sparse.vstack([K_a_lower, K_a_upper], format="csr")
-
-        # K_b maps \phi grid points to the difference in x direction
-        K_b_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_b_lower, (0, 0), (M, N), -1)
-        fill_cyclic_diagonal_2d(K_b_lower, (1, 0), (M, N), 1)
-
-        K_b_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_b_upper, (0, 1), (M, N), -1)
-        fill_cyclic_diagonal_2d(K_b_upper, (1, 1), (M, N), 1)
-
-        self.Dx = sparse.vstack([K_b_lower, K_b_upper], format="csr") / region.dx
-        # self.Dx_t = sparse.csr_matrix(self.Dx.T)
-
-        # K_c maps \phi grid points to the difference in y direction
-        K_c_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_c_lower, (0, 0), (M, N), -1)
-        fill_cyclic_diagonal_2d(K_c_lower, (0, 1), (M, N), 1)
-
-        K_c_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_c_upper, (1, 0), (M, N), -1)
-        fill_cyclic_diagonal_2d(K_c_upper, (1, 1), (M, N), 1)
-
-        self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / region.dy
-        # self.Dy_t = sparse.csr_matrix(self.Dy.T)
-
-
-def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
-    """Fill cyclically, element-wise in the j-th diagonal of a matrix.
-    The matrix represents a mapping from 1D data to 1D data.
-    """
-    assert mat.ndim == 2
-    i = np.arange(N)
-    mat[i, (i + j) % N] = val
-
-
-def fill_cyclic_diagonal_2d(mat: sparse.spmatrix, j: tuple[int, int], N: tuple[int, int], val: float):
-    """Fill cyclically, element-wise in the j-th diagonal of a matrix.
-    The matrix represents a mapping from 2D data to 2D data.
-    However, the 2d array is ravelled into 1D array for efficiency.
-    """
-    assert mat.ndim == 2
-
-    # cartesian product of range(N1) and range(N2)
-    N1, N2 = N
-    i1, i2 = np.mgrid[:N1, :N2]
-    i1 = i1.ravel()
-    i2 = i2.ravel()
-
-    j1, j2 = j
-    mat[i1 * N2 + i2, (i1 + j1) % N1 * N2 + (i2 + j2) % N2] = val
-
-
-def fill_vertical_block_diagonal(mat: sparse.spmatrix, N: int, val: list[float]):
-    """Fill cyclically, block-wise in the diagonal of a matrix.
-    """
-    assert mat.ndim == 2
-
-    # cartesian product of range(N1) and range(N2)
-    m = len(val)
-    for i in range(N):
-        mat[m * i:m * (i + 1), i] = val
+    def solid_solid_contact(self):
+        return np.nonzero(self.heterogeneous_height == 0)
+
+    def energy_density(self, phi: Components_t, d_phi: Components_t):
+        area_water_vapour = self.heterogeneous_height * (
+            # double well penalty on phi
+            (1 / self.interfacial_width) * self.double_well_penalty(phi)
+            # square penalty on d_phi
+            + self.interfacial_width * self.square_penalty(d_phi)
+        )
+
+        # FIXME: add the slope contribution.
+        area_water_solid = 2 * phi
+
+        return area_water_vapour - self.surface_tension_ratio * area_water_solid
+
+    @staticmethod
+    def double_well_penalty(x):
+        return 9 * x**2 * (1 - x) ** 2
+
+    @staticmethod
+    def square_penalty(x):
+        return np.sum(x**2, axis=0, keepdims=True)
+
+    def energy_density_sensitivity(self, phi: Components_t, d_phi: Components_t):
+        area_water_vapour_sens_phi = self.heterogeneous_height * (
+            # derivative of double well penalty w.r.t. phi
+            (1 / self.interfacial_width)
+            * self.double_well_penalty_derivative(phi)
+        )
+        # FIXME: add the slope contribution. Or not?
+        area_water_solid_sens_phi = 2
+
+        energy_density_sens_phi = (
+            area_water_vapour_sens_phi - self.surface_tension_ratio * area_water_solid_sens_phi
+        )
+
+        energy_density_sens_d_phi = self.heterogeneous_height * (
+            # derivative of square penalty w.r.t. d_phi
+            self.interfacial_width
+            * self.square_penalty_derivatie(d_phi)
+        )
+
+        return [energy_density_sens_phi, energy_density_sens_d_phi]
+
+    @staticmethod
+    def double_well_penalty_derivative(x):
+        return 18 * x * (1 - x) * (1 - 2 * x)
+
+    @staticmethod
+    def square_penalty_derivatie(x):
+        return 2 * x
+
+    def liquid_height(self, phi: Components_t):
+        return self.heterogeneous_height * phi
+
+    def liquid_height_sensitivity(self, phi: Components_t):
+        return [self.heterogeneous_height * np.ones_like(phi)]
+
+    def adhesive_force(self, phi: Components_t, d_phi: Components_t):
+        raise NotImplementedError("We don't have explicit dependency of phase-field to gap height.")
+        return (
+            # double well penalty on phi
+            (1 / self.interfacial_width) * self.double_well_penalty(phi)
+            # square penalty on d_phi
+            + self.interfacial_width * self.square_penalty(d_phi)
+        )

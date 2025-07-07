@@ -7,8 +7,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from a_package.modelling import Region, SelfAffineRoughness
-from a_package.routine import ProcessedResult, post_process
+from a_package.modelling import SelfAffineRoughness
+from a_package.computing import Grid
+from a_package.simulating import ProcessedResult, post_process
 
 
 def get_capillary_state(pr: ProcessedResult, index: int):
@@ -40,7 +41,7 @@ color_solid_phase = "C7"
 @dc.dataclass
 class DropletData:
     """Somewhat flat data with all necessary values for visualizing one capillary state."""
-    region: Region
+    region: Grid
     eta: float       # interfacial width
     h1: np.ndarray   # roughness of the 1 plate in 2D-array
     h2: np.ndarray   # roughness of the 2 plate in 2D-array
@@ -196,10 +197,9 @@ def plot_gibbs_free_energy(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
 
     # Get the first few data points
     E = pr.evolution.E[:n_step]
-    # p = pr.evolution.p[:n_step]
-    # V = pr.evolution.V[:n_step]
-    # G = E - p * V
-    G = E
+    p = pr.evolution.p[:n_step]
+    V = pr.evolution.V[:n_step]
+    G = E - p * V
 
     # Non-dimensionalize
     eta = pr.modelling.eta
@@ -218,7 +218,7 @@ def plot_PSD(ax: plt.Axes):
     # TODO: change to sample the PSD from the height profile of a rough surface
     L = 10           # spatial dimension
     n_grid = 200     # samples in spatial domain
-    region = Region(L, L, n_grid, n_grid)
+    region = Grid(L, L, n_grid, n_grid)
 
     qR = 2e0  # roll-off
     qS = 2e1  # cut-off
