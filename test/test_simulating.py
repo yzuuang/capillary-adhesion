@@ -6,21 +6,24 @@ import math
 import sys
 
 import numpy as np
+import numpy.random as random
 import matplotlib.pyplot as plt
 
 from a_package.simulating import *
+from .utilities import *
 
 
-show_me_plot = True
+rng = random.default_rng()
+show_me = True
 
 
 def test_capillary_bridge_compute_energy_jacobian():
-    grid_shape = 10, 10
+    grid_shape = 5, 5
     bridge = create_capillary_bridge(grid_shape)
 
     # Determine the lowest step by machine precision
     lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))
-    highest_magnitude = 0
+    highest_magnitude = 1
     # All the mini-steps to evaluate the numerical jacobian, for a view of accuracy
     deltas = np.power(10.0, np.arange(lowest_magnitude, highest_magnitude + 1))
 
@@ -29,14 +32,9 @@ def test_capillary_bridge_compute_energy_jacobian():
     field_shape = np.shape(phi)
     numeric_jacobian = np.empty((deltas.size, *field_shape))
     for idx_delta, delta in enumerate(deltas):
-        for locs in np.ndindex(field_shape):
-            ref_val = np.copy(phi[locs])
-            phi[locs] = ref_val + delta
-            plus_val = bridge.compute_energy(phi).item()
-            phi[locs] = ref_val - delta
-            minus_val = bridge.compute_energy(phi).item()
-            numeric_jacobian[(idx_delta, *locs)] = (plus_val - minus_val) / delta * 0.5
-            phi[locs] = ref_val
+        numeric_jacobian[idx_delta] = np.squeeze(
+            central_difference_jacobian(bridge.compute_energy, phi, delta)
+        )
 
     # Compute jacobian from the implementation
     implemented_jacobian = bridge.compute_energy_jacobian(phi)
@@ -48,19 +46,51 @@ def test_capillary_bridge_compute_energy_jacobian():
     )
 
     # Plots
-    if show_me_plot:
-        plt.plot(
-            deltas,
-            diffs,
-            "x-",
-            label=r"Difference from a numerical method of $\mathcal{O}(\delta^2)$",
+    if show_me:
+        print(f"Numerical\n{numeric_jacobian}")
+        print(f"Implemented\n{implemented_jacobian}")
+        fig = plot_precisions(deltas, diffs)
+        plt.show()
+
+    # Assertion
+    eps = 1e-6
+    # here choose the minimal value because accuracy varies w.r.t the step size
+    assert np.amin(diffs) < eps, f"The difference exceeds the tolerance {eps:.2e}"
+
+
+def test_capillary_bridge_compute_volume_jacobian():
+    grid_shape = 5, 5
+    bridge = create_capillary_bridge(grid_shape)
+
+    # Determine the lowest step by machine precision
+    lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))
+    highest_magnitude = 1
+    # All the mini-steps to evaluate the numerical jacobian, for a view of accuracy
+    deltas = np.power(10.0, np.arange(lowest_magnitude, highest_magnitude + 1))
+
+    # Compute jacobian numerically (central difference)
+    phi = bridge.phase_nodal_field.data
+    field_shape = np.shape(phi)
+    numeric_jacobian = np.empty((deltas.size, *field_shape))
+    for idx_delta, delta in enumerate(deltas):
+        numeric_jacobian[idx_delta] = np.squeeze(
+            central_difference_jacobian(bridge.compute_volume, phi, delta)
         )
 
-        plt.loglog()
-        plt.xlabel(r"Step size $\delta$")
-        plt.ylabel(r"Deviation $\varepsilon$")
-        plt.legend()
+    # Compute jacobian from the implementation
+    implemented_jacobian = bridge.compute_volume_jacobian(phi)
 
+    # Measure the difference
+    diffs = np.linalg.norm(
+        abs(implemented_jacobian.squeeze() - numeric_jacobian.squeeze()),
+        axis=tuple(range(-len(grid_shape), 0)),
+    )
+
+    # Plots
+    if show_me:
+        print(f"Numerical\n{numeric_jacobian}")
+        print(f"Implemented\n{implemented_jacobian}")
+        fig = plot_precisions(deltas, diffs)
         plt.show()
 
     # Assertion
@@ -70,6 +100,7 @@ def test_capillary_bridge_compute_energy_jacobian():
 
 
 def create_capillary_bridge(nb_pixels: list[int]):
+    """With spherical top and flat substrate."""
     # Region
     domain_size = [1.0, 1.0]
     grid = Grid(domain_size, nb_pixels, [1, 1], [1, 1])
@@ -87,7 +118,7 @@ def create_capillary_bridge(nb_pixels: list[int]):
     h0 = np.zeros([1, 1, *grid.nb_pixels_in_section])
 
     # A phase field
-    phi = np.ones([1, 1, *grid.nb_pixels_in_section])
+    phi = rng.random([1, 1, *grid.nb_pixels_in_section])
 
     # Required model
     z = 3 * a

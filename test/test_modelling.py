@@ -1,47 +1,62 @@
 import numpy as np
 import numpy.random as random
-
 from a_package.modelling import CapillaryVapourLiquid
+
+from .utilities import *
 
 
 rng = random.default_rng()
 
 
-def test_sensitivity():
-    vapour_liquid = CapillaryVapourLiquid(1.0, 0.5, rng.normal(0.0, size=1))
-    phi = rng.random(size=1)
-    d_phi = rng.random(size=2)
+def test_energy_density_sensitivity():
+    # A not too big random field
+    test_size = 5
+    vapour_liquid = CapillaryVapourLiquid(1.0, 0.5, rng.normal(0.0, size=(1, test_size)))
+    phi = rng.random(size=(1, test_size))
+    phi_grad = rng.random(size=(2, test_size))
 
-    [sens_phi, sens_d_phi] = vapour_liquid.energy_density_sensitivity(phi, d_phi)
+    # Implemented
+    [e_D_phi, e_D_phi_grad] = vapour_liquid.energy_density_sensitivity(phi, phi_grad)
 
-    def call_with_flat_args(phi, d1_phi, d2_phi):
-        return vapour_liquid.energy_density(np.array([phi]), np.array([d1_phi, d2_phi]))
+    # Finite difference
+    def call_with_one_arg(arg):
+        phi = arg[0]
+        phi_grad = arg[-2:]
+        return vapour_liquid.energy_density(phi, phi_grad)
+    arg = np.concatenate([phi, phi_grad], axis=0)
+    delta = 1e-4
+    ref = central_difference_jacobian(call_with_one_arg, arg, delta)
+    ref_e_D_phi = ref[0]
+    ref_e_D_phi_grad = ref[-2:]
 
-    ref_sensitivity = finite_difference_jacobian(call_with_flat_args, *phi, *d_phi)
+    # Because in "modellling", all functions only modify the "components" axis, and don't touch
+    # the "grid shape", every data point is independent.
+    ref_e_D_phi = ref_e_D_phi[np.nonzero(ref_e_D_phi)].reshape(e_D_phi.shape)
+    ref_e_D_phi_grad = ref_e_D_phi_grad[np.nonzero(ref_e_D_phi_grad)].reshape(e_D_phi_grad.shape)
 
-    assert np.isclose(sens_phi, ref_sensitivity[0])
-    assert np.isclose(sens_d_phi[0], ref_sensitivity[1])
-    assert np.isclose(sens_d_phi[1], ref_sensitivity[2])
+    # Assertions
+    assert np.allclose(e_D_phi, ref_e_D_phi)
+    assert np.allclose(e_D_phi_grad, ref_e_D_phi_grad)
 
 
-def finite_difference_jacobian(func, *args):
-    delta = 2**(-23)
 
-    args = np.array(args)
-    jacobian = np.full_like(args, np.nan)
+def test_liquid_height_sensitivity():
+    # A not too big random field
+    test_size = 5
+    vapour_liquid = CapillaryVapourLiquid(1.0, 0.5, rng.normal(0.0, size=(1, test_size)))
+    phase = rng.random(size=(1, test_size))
 
-    for index, arg in enumerate(args):
-        # Backup the original value
-        original_value = np.copy(arg)
+    # Implemented
+    [h_D_phi] = vapour_liquid.liquid_height_sensitivity(phase)
 
-        # Get finite difference jacobian
-        args[index] = original_value + delta
-        value_plus = func(*args).item()
-        args[index] = original_value - delta
-        value_minus = func(*args).item()
-        jacobian[index] = (value_plus - value_minus) / (2 * delta)
+    # Finite difference
+    delta = 1e-4
+    ref_h_D_phi = np.squeeze(central_difference_jacobian(vapour_liquid.liquid_height, phase, delta))
 
-        # reset back to origin
-        args[index] = original_value
+    # Because in "modellling", all functions only modify the "components" axis, and don't touch
+    # the "grid shape", every data point is independent.
+    ref_h_D_phi = ref_h_D_phi[np.nonzero(ref_h_D_phi)].reshape(h_D_phi.shape)
 
-    return jacobian
+
+    # Assertion
+    assert np.allclose(h_D_phi, ref_h_D_phi)
