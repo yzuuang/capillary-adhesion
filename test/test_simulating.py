@@ -14,7 +14,7 @@ from .utilities import *
 
 
 rng = random.default_rng()
-show_me = True
+show_me = False
 
 
 def test_capillary_bridge_compute_energy_jacobian():
