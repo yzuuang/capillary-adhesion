@@ -21,8 +21,8 @@ def main():
 def simulate(data_path: str):
     # Region
     nb_spatial_dims = 2
-    domain_length = [1.0, 1.0]
-    nb_pixels = [20] * nb_spatial_dims
+    domain_length = [1.0] * nb_spatial_dims
+    nb_pixels = [50] * nb_spatial_dims
     nb_subdivisions = [1, 1]
     nb_ghost_layers = [1, 1]
     grid = Grid(domain_length, nb_pixels, nb_subdivisions, nb_ghost_layers)
@@ -67,9 +67,9 @@ def simulate(data_path: str):
 
     # The solver for optimization
     e_conv = 1e-6
-    e_volume = 1e-9
+    e_volume = 1e-4
     max_iter = 3000
-    c0 = 1e-2
+    c0 = 1e-3
     beta = 3.0
     k_max = 20
     solver = AugmentedLagrangian(e_conv, e_volume, max_iter, c0, beta, k_max)

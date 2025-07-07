@@ -291,14 +291,16 @@ class CapillaryBridge:
         liquid_volume: float,
     ):
         def f(x: np.ndarray) -> float:
-            x = x.reshape(self.original_shape)
             return self.compute_energy(x)
 
         self.solver.f = f
         # self.solver.f = lambda x: self.compute_energy(x)
 
+        def f_D_x(x: np.ndarray) -> float:
+            return self.compute_energy_jacobian(x)
+        self.solver.f_D_x = f_D_x
+
         def g(x: np.ndarray) -> float:
-            x = x.reshape(self.original_shape)
             return self.compute_volume(x) - liquid_volume
 
         self.solver.g = g
@@ -320,7 +322,6 @@ class CapillaryBridge:
             # print(f"In l(x), l has value {val}\n")
             # return val
             # FIXME: avoid updating field two times
-            x = x.reshape(self.original_shape)
             f = self.compute_energy(x)
             g = self.compute_volume(x) - liquid_volume
             return f + lam * g + 0.5 * c * g**2
@@ -350,7 +351,6 @@ class CapillaryBridge:
             # print(f"In dx_l(x), dx_l has shape {val.shape}, has values\n {val}\n")
             # return val
             # FIXME: avoid updating field three times
-            x = x.reshape(self.original_shape)
             f_D_x = self.compute_energy_jacobian(x)
             g = self.compute_volume(x) - liquid_volume
             g_D_x = self.compute_volume_jacobian(x)
