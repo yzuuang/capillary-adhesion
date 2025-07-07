@@ -99,6 +99,58 @@ def test_capillary_bridge_compute_volume_jacobian():
     assert np.amin(diffs) < eps, f"The difference exceeds the tolerance {eps:.2e}"
 
 
+def test_jacobian_in_constant_liquid_volume_formulation():
+    grid_shape = 5, 5
+    bridge = create_capillary_bridge(grid_shape)
+    grid = bridge.grid
+
+    V_l = 0.5 * np.multiply.reduce(grid.length)
+    bridge.formulate_with_constant_volume(V_l)
+
+    phi = random_initial_guess(grid, rng)
+    l_D_x = bridge.solver.dx_l
+    lam = 0.0
+    c = 0.01
+    implemented_jacobian = l_D_x(phi, lam, c)
+
+    # Determine the lowest step by machine precision
+    lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))
+    highest_magnitude = 1
+    # All the mini-steps to evaluate the numerical jacobian, for a view of accuracy
+    deltas = np.power(10.0, np.arange(lowest_magnitude, highest_magnitude + 1))
+
+    # Wrap the call function to be single argument
+    l = bridge.solver.l
+    def call_with_single_arg(phi):
+        return l(phi, lam, c)
+
+    # Compute jacobian numerically
+    field_shape = np.shape(phi)
+    numeric_jacobian = np.empty((deltas.size, *field_shape))
+    for idx_delta, delta in enumerate(deltas):
+        numeric_jacobian[idx_delta] = np.squeeze(
+            central_difference_jacobian(call_with_single_arg, phi, delta)
+        )
+
+    # Measure the difference
+    diffs = np.linalg.norm(
+        abs(implemented_jacobian.squeeze() - numeric_jacobian.squeeze()),
+        axis=tuple(range(-len(grid_shape), 0)),
+    )
+
+    # Plots
+    if show_me:
+        print(f"Numerical\n{numeric_jacobian}")
+        print(f"Implemented\n{implemented_jacobian}")
+        fig = plot_precisions(deltas, diffs)
+        plt.show()
+
+    # Assertion
+    eps = 1e-6
+    # here choose the minimal value because accuracy varies w.r.t the step size
+    assert np.amin(diffs) < eps, f"The difference exceeds the tolerance {eps:.2e}"
+
+
 def create_capillary_bridge(nb_pixels: list[int]):
     """With spherical top and flat substrate."""
     # Region
@@ -129,8 +181,8 @@ def create_capillary_bridge(nb_pixels: list[int]):
     vapour_liquid = CapillaryVapourLiquid(eta, gamma, solid_solid.gap_height())
 
     # The solver for optimization
-    e_conv = 1e-8
-    e_volume = 1e-6
+    e_conv = 1e-6
+    e_volume = 1e-8
     max_iter = 3000
     c0 = 1e-2
     beta = 3.0
