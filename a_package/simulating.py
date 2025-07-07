@@ -322,7 +322,7 @@ class CapillaryBridge:
             # FIXME: avoid updating field two times
             x = x.reshape(self.original_shape)
             f = self.compute_energy(x)
-            g = self.compute_volume(x)
+            g = self.compute_volume(x) - liquid_volume
             return f + lam * g + 0.5 * c * g**2
 
         self.solver.l = l
@@ -352,7 +352,7 @@ class CapillaryBridge:
             # FIXME: avoid updating field three times
             x = x.reshape(self.original_shape)
             f_D_x = self.compute_energy_jacobian(x)
-            g = self.compute_volume(x)
+            g = self.compute_volume(x) - liquid_volume
             g_D_x = self.compute_volume_jacobian(x)
             return f_D_x + (lam + c * g) * g_D_x
 
