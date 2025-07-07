@@ -393,6 +393,7 @@ class CapillaryBridge:
         # Save simulation results
         store.save("Simulation", "result", steps)
 
+    @staticmethod
     def validate_phase_field(values: np.ndarray):
         """Check the bounds on the phase field. Which is not enforced in optimization process."""
 
