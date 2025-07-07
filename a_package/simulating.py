@@ -379,8 +379,13 @@ class CapillaryBridge:
             # update the parameter
             print(f"Displacement={trajectory[index]}")
 
-            # solve the problem
+            # update the parameters (gap height, etc.)
             self.relocate_solid_plane(trajectory[index])
+
+            # Clean the phase field where the gap is closed, otherwise the jacobian is not 0 there
+            x[self.vapour_liquid.solid_solid_contact] = 0
+
+            # solve the problem
             [x, t_exec, lam] = self.solver.find_minimizer(x)
 
             # save the results
