@@ -66,8 +66,8 @@ def simulate(data_path: str):
     phi_init = random_initial_guess(grid, rng)
 
     # The solver for optimization
-    e_conv = 1e-8
-    e_volume = 1e-6
+    e_conv = 1e-6
+    e_volume = 1e-9
     max_iter = 3000
     c0 = 1e-2
     beta = 3.0
