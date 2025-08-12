@@ -15,9 +15,10 @@ show_me_plot = False
 
 
 def test_capillary_bridge_compute_energy_jacobian():
+    a = 1.0
     L = 10.0
     N = 10
-    region = Region(L, L, N, N)
+    region = Region(a, L, L, N, N)
 
     eta = L / N
     gamma = 0.2
