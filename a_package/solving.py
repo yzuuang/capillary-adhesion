@@ -78,8 +78,8 @@ class AugmentedLagrangian:
         is_converged = False
 
         for count in range(self.max_outer_loop):
-            # update primal, dual and parameter
-            # FIXME: the solver shouldn't know the exact values (0 and 1)
+            # update primal, dual and penalty parameter
+            # for primal, clip the solution to fit within the feasible region
             x = np.clip(x_plus, x_lb, x_ub)
             lam = lam_plus
             c = c_plus
@@ -94,7 +94,7 @@ class AugmentedLagrangian:
                 """Gradient of the Augmented Lagrangian."""
                 g_D_x = numopt.g_grad(x)
                 l_D_x = numopt.f_grad(x) + lam * g_D_x + c * numopt.g(x) * g_D_x
-                # projecting to the [0, 1] feasible range
+                # projecting to the feasible range
                 l_D_x[(x <= x_lb) & (l_D_x > 0)] = 0
                 l_D_x[(x >= x_ub) & (l_D_x < 0)] = 0
                 return l_D_x
