@@ -55,21 +55,21 @@ class Record:
     init_guess: np.ndarray
 
 
-eps = 2e-1  # cut off value to decide one phase
+eps = 1e-1  # cut off value to decide one phase
 
 
 def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_water=1-eps):
     # Get the data of the cross section at specified row index
     # FIXME: only shift in x-axis is considered.
-    h1 = np.roll(data.h1[idx_row,:], int(data.r[1]/data.region.dx))
-    h1 = (h1 + data.r[-1]) / data.eta
-    h2 = data.h2[idx_row,:] / data.eta
-    x = data.region.x / data.eta
+    h1 = np.roll(data.h1[idx_row,:], int(data.r[1]/data.region.a))
+    h1 = (h1 + data.r[-1]) / data.region.a
+    h2 = data.h2[idx_row,:] / data.region.a
+    x = data.region.x / data.region.a
 
     # add border values due to periodic boundary condition
     h1 = np.append(h1, h1[0])
     h2 = np.append(h2, h2[0])
-    x = np.append(x, data.region.lx/data.eta)
+    x = np.append(x, data.region.lx/data.region.a)
 
     # plot the two plates
     ax.plot(x, h1, "k-")
@@ -103,41 +103,41 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
 
 def plot_cross_section_phase_field(ax: plt.Axes, data: DropletData, idx_row: int):
     phi = data.phi[idx_row,:]
-    x_dimensionless = data.region.x / data.eta
+    x_dimensionless = data.region.x / data.region.a
     ax.plot(x_dimensionless, phi, color='C0')
 
 
 def plot_height_topography(ax: plt.Axes, data: DropletData):
     # make value dimension less
-    h = data.h1 / data.eta
+    h = data.h1 / data.region.a
 
-    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
-    im = ax.imshow(h, cmap=cmap_height, extent=border)
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.region.a
+    im = ax.imshow(h, interpolation='none', cmap=cmap_height, extent=border)
 
     return im
 
 
 def plot_gap_topography(ax: plt.Axes, data: DropletData):
     # nondimensionalize by 'eta'
-    g = data.g / data.eta
-    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+    g = data.g / data.region.a
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.region.a
     
     # Set a negative 'vmin' so that the map still looks blue
     vmax = g.max()
     vmin = 0
     # im = ax.imshow(g, cmap='Blues', vmin=vmin, vmax=vmax, interpolation='nearest', extent=border)
-    im = ax.imshow(g, cmap=cmap_gap, vmin=vmin, vmax=vmax, interpolation='nearest', extent=border)
+    im = ax.imshow(g, interpolation='none', cmap=cmap_gap, vmin=vmin, vmax=vmax, extent=border)
 
     return im
 
 
 def plot_contact_topography(ax: plt.Axes, data: DropletData):
     # mask the non-contact part
-    contact = np.ma.masked_where(data.g > 0, data.g / data.eta)
+    contact = np.ma.masked_where(data.g > 0, data.g / data.region.a)
 
     # nondimensionalize by 'eta'
-    contact = contact / data.eta
-    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+    contact = contact / data.region.a
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.region.a
 
     im = ax.imshow(contact, cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4, interpolation='nearest', extent=border)
     return im
@@ -146,7 +146,7 @@ def plot_contact_topography(ax: plt.Axes, data: DropletData):
 def plot_liquid_topography(ax: plt.Axes, data:DropletData):
     liquid = np.ma.masked_where(data.phi <= 1-eps, data.phi)
     # liquid = data.phi
-    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.region.a
     # im = ax.imshow(liquid, cmap="Reds", vmin=0, vmax=2, alpha=0.5, extent=border)
     im = ax.imshow(liquid, cmap=cmap_phase_field, vmin=0, vmax=1.5, alpha=0.8, interpolation='nearest', extent=border)
     return im
@@ -158,7 +158,7 @@ def plot_phase_field_topography(ax: plt.Axes, data: DropletData):
     # these values are to match the color in the "afmhot" colormap.
     # value_contact = 2.0
     # phi[g <= 0] = value_contact
-    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.eta
+    border = np.array([0, data.region.lx, 0, data.region.ly]) / data.region.a
     im = ax.imshow(phi, vmin=0, vmax=2, cmap='Blues', interpolation='nearest', extent=border)
     return im
 
@@ -178,6 +178,7 @@ def plot_combined_topography(ax: plt.Axes, data: DropletData):
     im2 = plot_contact_topography(ax, data)
     # im3 = plot_interface_topography(ax, data)
     im4 = plot_liquid_topography(ax, data)
+    # im4 = plot_phase_field_topography(ax, data)
     # return im1, im2, im4
 
 
@@ -202,8 +203,8 @@ def plot_gibbs_free_energy(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     G = E
 
     # Non-dimensionalize
-    eta = pr.modelling.eta
-    G = G / (eta**2)  # NOTE: actually needs to be divided again by 'gamma', but 'gamma' is symbolic so far.
+    a = pr.modelling.region.a
+    G = G / (a**2)  # NOTE: actually needs to be divided again by 'gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
     steps = np.arange(n_step)
@@ -244,8 +245,8 @@ def plot_normal_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     f = pr.evolution.F[:n_step]
 
     # Non-dimensionalize
-    eta = pr.modelling.eta
-    f = f / eta  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+    a = pr.modelling.region.a
+    f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
     steps = np.arange(n_step)
@@ -265,8 +266,8 @@ def plot_shear_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     f = pr.evolution.F[:n_step]
 
     # Non-dimensionalize
-    eta = pr.modelling.eta
-    f = f / eta  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+    a = pr.modelling.region.a
+    f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
     steps = np.arange(n_step)
@@ -288,10 +289,10 @@ def plot_force_curves(ax: plt.Axes, pr: ProcessedResult, idx_stop: int=None):
     f = pr.evolution.F[:idx_stop]
 
     # Non-dimensionalize by using 'eta'
-    eta = pr.modelling.eta
+    a = pr.modelling.region.a
     r = la.norm(r, axis=-1)
-    r = r / eta
-    f = f / eta  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+    r = r / a
+    f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
     [l1] = ax.plot(r, f[:,0], color="r", linestyle="-", marker="o", mfc="none", label=r"$f_x$")

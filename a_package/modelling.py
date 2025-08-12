@@ -16,17 +16,18 @@ from a_package.solving import NumOptEq
 @dc.dataclass
 class Region:
     """A discrete space in 2D."""
+    a: float
     lx: float
     ly: float
     nx: int
     ny: int
 
     def __post_init__(self):
-        self.dx = self.lx / self.nx
+        self.dx = self.a
         self.x = np.arange(self.nx) * self.dx
         self.qx = (2 * np.pi) * fft.fftfreq(self.nx, self.dx)
 
-        self.dy = self.ly / self.ny
+        self.dy = self.a
         self.y = np.arange(self.ny) * self.dy
         self.qy = (2 * np.pi) * fft.fftfreq(self.ny, self.dy)
 
