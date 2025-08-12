@@ -8,7 +8,7 @@ import numpy as np
 import numpy.fft as fft
 import numpy.random as random
 import scipy.sparse as sparse
-from SurfaceTopography.Uniform.Interpolation import Bicubic
+# from SurfaceTopography.Uniform.Interpolation import Bicubic
 
 from a_package.solving import NumOptEq
 
