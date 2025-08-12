@@ -42,76 +42,119 @@ class NumOptEq:
 
 @dc.dataclass
 class AugmentedLagrangian:
-    inner_max_iter: int
+    max_inner_iter: int
+    max_outer_loop: int
     tol_convergence: float
     tol_constraint: float
-    c_init: float
-    c_upper_bound: float
-    beta: float
+    init_penalty_weight: float
 
-    def solve_minimisation(self, numopt: NumOptEq, x0: np.ndarray):
-        # compute all possible `c` values, i.e. for(c=c_init; c<c_upper_bound; c*=beta)
-        num_iter = int(np.log(self.c_upper_bound / self.c_init) / np.log(self.beta)) + 1
-        cc = self.c_init * np.pow(self.beta, np.arange(num_iter))
+    def __post_init__(self):
+        # parameters related to convergence, used only by inner solver
+        self.tol_creeping = 1e1
+        # parameters deciding how to grow the penalty weight
+        self.sufficient_constr_dec = 1e-2
+        self.penalty_weight_growth = 3e0
 
-        # initial setup
-        x_plus = x0
-        lam = 0
+    def solve_minimisation(
+        self, numopt: NumOptEq, x0: np.ndarray, x_lb: float = -np.inf, x_ub: float = +np.inf
+    ):
+        # print headers
+        nabla = "\u2207"
+        tabel_headers = ["Loop", "f", f"|Pr({nabla}L)|", "|g|", "lam", "c", "Iter", f"|res {nabla}|", "Message"]
+        separator = "  "
+        print(
+            *[
+                "{:<4}".format(col_name) if col_name in ["Loop", "Iter"] else "{:<8}".format(col_name)
+                for col_name in tabel_headers
+            ],
+            sep=separator,
+        )
         t_exec = 0
 
-        # inform
-        tabel_header = ['Iter', 'T_exec', 'Objective', 'lambda\t', 'Lagrangian', 'c\t', 'Augm. Lagr.',
-                        'INFO']
-        print(*tabel_header, sep='\t')
+        # initial values
+        x_plus = x0
+        lam_plus = 0.0
+        c_plus = self.init_penalty_weight
+        is_converged = False
 
-        for k, c in enumerate(cc):
+        for count in range(self.max_outer_loop):
+            # update primal, dual and parameter
+            # FIXME: the solver shouldn't know the exact values (0 and 1)
+            x = np.clip(x_plus, x_lb, x_ub)
+            lam = lam_plus
+            c = c_plus
+
             # derive augmented lagrangian
             def l(x: np.ndarray):
                 """Augmented Lagrangian."""
                 g_x = numopt.g(x)
-                return numopt.f(x) + lam * g_x + (0.5 * c) * g_x ** 2
+                return numopt.f(x) + lam * g_x + (0.5 * c) * g_x**2
 
             def l_grad(x: np.ndarray):
                 """Gradient of the Augmented Lagrangian."""
-                return numopt.f_grad(x) + (lam + c * numopt.g(x)) * numopt.g_grad(x)
+                g_D_x = numopt.g_grad(x)
+                l_D_x = numopt.f_grad(x) + lam * g_D_x + c * numopt.g(x) * g_D_x
+                # projecting to the [0, 1] feasible range
+                l_D_x[(x <= x_lb) & (l_D_x > 0)] = 0
+                l_D_x[(x >= x_ub) & (l_D_x < 0)] = 0
+                return l_D_x
 
-            # solve minimization problem
+            # print status before calling inner solver
+            obj_value = numopt.f(x)
+            norm_lagr_gradient = max(abs(l_grad(x)))
+            constr_violation = abs(numopt.g(x))
+            padded_literals = [
+                f"{count:>4d}",
+                f"{obj_value:>8.1e}",
+                f"{norm_lagr_gradient:>8.1e}",
+                f"{constr_violation:>8.1e}",
+                f"{lam:>8.1e}",
+                f"{c:>8.1e}",
+            ]
+            print(separator.join(padded_literals), end=separator, flush=True)
+
+            # convergence criteria
+            if norm_lagr_gradient < self.tol_convergence and constr_violation < self.tol_constraint:
+                is_converged = True
+                print(f"Notice: achieving required tolerance at iter #{count}")
+                break
+
+            # solve minimisation of augmented lagrangian
             t_exec_sub = -timeit.default_timer()
-            [x_plus, l_plus, info] = optimize.fmin_l_bfgs_b(
+            [x_plus, _, info] = optimize.fmin_l_bfgs_b(
                 l,
-                x_plus,  # old solution as new initial guess
-                bounds=[(0, 1)] * len(x_plus),
+                x,  # old solution as new initial guess
                 fprime=l_grad,
-                factr=1e1,  # for extremely high accuracy
+                # relative decreasing of `f`, in units of `eps`; if set it to 0,
+                # the test will stop the algorithm only if the objective function remains unchanged after one iteration
+                factr=self.tol_creeping,
+                # this `pg` should be zero at exactly a local minimizer
                 pgtol=self.tol_convergence,
-                maxiter=self.inner_max_iter,
+                maxiter=self.max_inner_iter,
             )
             t_exec_sub += timeit.default_timer()
             t_exec += t_exec_sub
 
-            # inform
-            f_plus = numopt.f(x_plus)
-            error_g_x = numopt.g(x_plus)
-            lagr1 = f_plus + lam * error_g_x
+            # print inner solver progress
+            res_norm_grad = max(abs(info["grad"]))
+            padded_literals = [f"{info['nit']:>4d}", f"{res_norm_grad:>8.1e}", info["task"]]
+            print(separator.join(padded_literals))
 
-            info['max_grad'] = max(info['grad'])
-            del info['grad']
+            # if reaches maximal iterations, simply do another loop to run more iterations
+            # only the "x" is updated
+            if info["warnflag"] == 1:
+                continue
+            # else, it achieves convergence
+            constr_violation_plus = numopt.g(x_plus)
+            # update Lagrangian multiplier following the formula
+            lam_plus = lam + c * constr_violation_plus
+            # increase penalty weight if the constraint didn't improve enough
+            if not (abs(constr_violation_plus) < self.sufficient_constr_dec * abs(constr_violation)):
+                c_plus = c * self.penalty_weight_growth
 
-            tabel_entry = [f"#{k}", f"{round(t_exec_sub, 2):.2f}s", f"{f_plus:.2e}", f"{lam:.2e}",
-                           f"{lagr1:.2e}", f"{c:.2e}", f"{l_plus:.2e}", f"{info}"]
-            print('\t'.join(tabel_entry))
-
-            # convergence criteria
-            if abs(error_g_x) < self.tol_constraint:
-                print(f"Notice: achieving required tolerance at iter #{k}")
-                break
-
-            # update the estimate of Lagrangian multiplier
-            lam += c * error_g_x
-
-            # check if not solved
-            if k + 1 == num_iter:
-                print(f"Warning: maximal AL iter #{num_iter}")
+        # check if not solved
+        if not is_converged:
+            print(f"WARNING: NOT CONVERGED.")
 
         print(f"Total time for inner solver: {t_exec:.1e} seconds.")
 
