@@ -112,6 +112,7 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
 
     # simulate
     x = capi.phi.ravel()
+    lam = 0.0
     for index, d in enumerate(all_d):
         # update the parameter
         print(f""
@@ -122,10 +123,11 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        x, t_exec, lam = solver.solve_minimisation(numopt, x)
+        x, lam, t_exec = solver.solve_minimisation(numopt, x, lam, 0, 1)
 
         # save the results
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
+        # capi.phi = capi.squashing(x.reshape(capi.region.nx, capi.region.ny))
         data = SimulationStep([0,0], d, t_exec, capi.phi, lam)
         store.save("Simulation", f"steps---{index}", data)
         sim.steps.append(f"steps---{index}.json")
@@ -156,6 +158,7 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
 
     # simulate
     x = capi.phi.ravel()
+    lam = 0.0
     for index, m in enumerate(slide_by_indices):
         # update the parameter
         print(f""
@@ -165,7 +168,7 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        x, t_exec, lam = solver.solve_minimisation(numopt, x)
+        x, lam, t_exec = solver.solve_minimisation(numopt, x, lam, 0, 1)
 
         # save the result
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)

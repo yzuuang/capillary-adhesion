@@ -56,7 +56,7 @@ class AugmentedLagrangian:
         self.penalty_weight_growth = 3e0
 
     def solve_minimisation(
-        self, numopt: NumOptEq, x0: np.ndarray, x_lb: float = -np.inf, x_ub: float = +np.inf
+        self, numopt: NumOptEq, x0: np.ndarray, lam0: float = 0, x_lb: float = -np.inf, x_ub: float = +np.inf
     ):
         # print headers
         nabla = "\u2207"
@@ -73,7 +73,7 @@ class AugmentedLagrangian:
 
         # initial values
         x_plus = x0
-        lam_plus = 0.0
+        lam_plus = lam0
         c_plus = self.init_penalty_weight
         is_converged = False
 
@@ -158,4 +158,4 @@ class AugmentedLagrangian:
 
         print(f"Total time for inner solver: {t_exec:.1e} seconds.")
 
-        return x_plus, t_exec, lam
+        return x, lam, t_exec
