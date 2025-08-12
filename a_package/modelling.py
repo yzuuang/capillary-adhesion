@@ -89,14 +89,14 @@ class CapillaryBridge:
     def __post_init__(self):
         if self.ix1_iy1 is None:
             self.ix1_iy1 = (0, 0)
-        h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
-        self.interp_h1 = Bicubic(h1_origin, periodic=True)
+        # h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
+        # self.interp_h1 = Bicubic(h1_origin, periodic=True)
         self.inner = ComputeCapillary(self.region, self.eta, self.gamma)
 
     def update_gap(self):
-        # Lateral displacement of the solid top
-        # NOTE: assume periodic boundary
-        self.h1 = self.interp_h1(self.region.xm - self.ix1_iy1[0], self.region.ym - self.ix1_iy1[1])
+        # # Lateral displacement of the solid top
+        # # NOTE: assume periodic boundary
+        # self.h1 = self.interp_h1(self.region.xm - self.ix1_iy1[0], self.region.ym - self.ix1_iy1[1])
         # Gap
         self.g = self.h1 + self.z1 - self.h2
 

@@ -22,7 +22,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "PyQt6",
-    "SurfaceTopography",
+    # "SurfaceTopography",
 ]
 
 [project.optional-dependencies]
