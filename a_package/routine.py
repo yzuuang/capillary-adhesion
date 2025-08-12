@@ -96,9 +96,10 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
     sim = SimulationResult("modelling.json", "solving.json", [])
 
     # generate all `d` (mean distances) values
-    num_d = math.floor((d_max - d_min) / d_step) + 1
-    d_departing = d_min + d_step * np.arange(num_d)
+    # FIXME: specify nb_steps may be a better choice
+    num_d = math.ceil((d_max - d_min) / d_step) + 1
     d_approaching = d_max - d_step * np.arange(num_d)
+    d_departing = np.flip(d_approaching)
     all_d = np.concatenate((d_approaching, d_departing[1:]))
 
     # Truncate to remove floating point errors
