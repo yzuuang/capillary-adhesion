@@ -1,34 +1,33 @@
 import os
-import sys
+import matplotlib.pyplot as plt
 
 from a_package.routine import ProcessedResult
 from a_package.storing import working_directory
 from a_package.visualizing import *
 
-import matplotlib.pyplot as plt
 
-from utils.common import get_runtime_dir
-# sim_case = 'tip_over_pattern'
-sim_case = 'sinusoid_over_flat'
-# sim_case = 'flat_over_flat'
-work_path = get_runtime_dir(sim_case)
+# data_folder = "parallel_flat_plates.data"
+# data_folder = "one_peak.data"
+data_folder = "rough_surfaces_at_contact.data"
+# data_folder = "rough_surfaces_slide.data"
 
 
 def main():
-    with working_directory(work_path, read_only=True) as store:
+    path = os.path.join(os.path.dirname(__file__), data_folder)
+    with working_directory(path, read_only=True) as store:
         pr = store.load("Processed", "result", ProcessedResult)
-    filename_base = __file__.replace(".py", f"---{sim_case}")
+    filename_base = __file__.replace(".py", f"---{data_folder}")
 
     latexify_plot(15)
 
-    anim = animate_droplet_evolution_with_curves(pr)
-    anim.save(f"{filename_base}.mp4", writer="ffmpeg")
+    # anim = animate_droplet_evolution(pr)
+    # anim.save(f"{filename_base}.mp4", writer="ffmpeg")
 
-    # [fig, ax] = plt.subplots(1, 1, figsize=(10, 3), constrained_layout=True)
-    # plot_normal_force(ax, pr, None)
-    # ax.set_ylabel(r"Force $F/\gamma\eta$")
-    # ax.set_xlabel('Simulation progress')
-    # fig.savefig(f"{filename_base}.svg", dpi=450)
+    [fig, ax] = plt.subplots(1, 1, figsize=(10, 3), constrained_layout=True)
+    plot_normal_force(ax, pr, None)
+    ax.set_ylabel(r"Force $F/\gamma\eta$")
+    ax.set_xlabel('Simulation progress')
+    fig.savefig(f"{filename_base}.svg", dpi=450)
     plt.show()
 
 
@@ -56,33 +55,34 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
     axs_lhs = sf1.subplots(2, 1, sharex=True, height_ratios=[1, 4])
     axs = np.append(axs, axs_lhs)
 
+
     n_step = len(pr.evolution.t_exec)
-    idx_row = pr.modelling.region.nx // 2
-    a = pr.modelling.region.a
+    idx_row = 64
+    eta = pr.modelling.eta
 
     # decides the view limit
     view_margin_scale = 0.05
 
-    h_min = np.amin(pr.modelling.h2[idx_row, :]) / a
-    h_max = (np.amax(pr.modelling.h1[idx_row, :]) + np.amax(pr.evolution.r[:, -1])) / a
+    h_min = np.amin(pr.modelling.h1[idx_row, :]) / eta
+    h_max = (np.amax(pr.modelling.h2[idx_row, :]) + np.amax(pr.evolution.r[:, -1])) / eta
     h_margin = view_margin_scale * (h_max - h_min)
     h_min = h_min - h_margin
     h_max = h_max + 10*h_margin  # for the legend
 
-    e_min = np.amin(pr.evolution.E) / a**2
-    e_max = np.amax(pr.evolution.E) / a**2
+    e_min = np.amin(pr.evolution.E) / eta**2
+    e_max = np.amax(pr.evolution.E) / eta**2
     e_margin = view_margin_scale * (e_max - e_min)
     e_min = e_min - e_margin
     e_max = e_max + e_margin
 
-    F_n_min = np.amin(pr.evolution.F[:, -1]) / a
-    F_n_max = np.amax(pr.evolution.F[:, -1]) / a
+    F_n_min = np.amin(pr.evolution.F[:, -1]) / eta
+    F_n_max = np.amax(pr.evolution.F[:, -1]) / eta
     F_n_margin = view_margin_scale * (F_n_max - F_n_min)
     F_n_min = F_n_min - F_n_margin
     F_n_max = F_n_max + F_n_margin
 
-    F_t_min = np.amin(pr.evolution.F[:, 0:2]) / a
-    F_t_max = np.amax(pr.evolution.F[:, 0:2]) / a
+    F_t_min = np.amin(pr.evolution.F[:, 0:2]) / eta
+    F_t_max = np.amax(pr.evolution.F[:, 0:2]) / eta
     F_t_margin = view_margin_scale * (F_t_max - F_t_min)
     F_t_min = F_t_min - F_t_margin
     F_t_max = F_t_max + F_t_margin
@@ -114,7 +114,7 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
         axs[-2].set_title("Cross section")
 
         plot_combined_topography(axs[-1], get_capillary_state(pr, i_frame))
-        axs[-1].axhline(pr.modelling.region.y[idx_row] / a, color="k")
+        axs[-1].axhline(pr.modelling.region.y[idx_row] / eta, color="k")
         axs[-1].set_ylabel(r"Position $y/a$")
         axs[-1].set_title("Gap & Phase")
 
