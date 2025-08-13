@@ -1,81 +1,112 @@
+import os
+import sys
+
+import numpy as np
 import numpy.random as random
+import matplotlib.pyplot as plt
 
 from a_package.modelling import Region, wavevector_norm, SelfAffineRoughness, PSD_to_height, CapillaryBridge
-from a_package.routine import simulate_quasi_static_pull_push, simulate_quasi_static_slide
+from a_package.routine import simulate_quasi_static_pull_push
 from a_package.solving import AugmentedLagrangian
 from a_package.storing import working_directory
 from a_package.visualizing import *
 
+
+show_me = False
+
+# define the working path by file name
+from utils.common import get_runtime_dir, read_configs
+
+case_name = os.path.basename(os.path.dirname(__file__))
+working_dir = get_runtime_dir(case_name)
 
 seed = random.SeedSequence().entropy
 print(f"seed = {seed}")
 rng = random.default_rng(seed)
 
 
-if __name__ == "__main__":
-    # modelling parameters
-    a = 1.0         # pixel size
-    N = 128         # num of nodes along one axis
-    L = N * a       # lateral size
-    V = L**2 * a * 1.5    # volume of the droplet
+def main():
+    config = read_configs(sys.argv[1:])
 
-    eta = a       # scaling interface width
-    gamma = -0.5     # surface tensions: (SL - SG) / LG
+    # grid
+    a = config["Grid"].getfloat("pixel_size")
+    N = config["Grid"].getint("nb_pixels")
+    L = a * N
+    region = Region(a, L, L, N, N)
 
-    # the region where simulation runs
-    region = Region(L, L, N, N)
-
-    # generate rough plates
-    C0 = 1e5  # prefactor
-    qR = (2*np.pi/L) * 5  # roll-off
-    qS = (2*np.pi/L) * 50  # cut-off
-    H = 0.95  # Hurst exponent
+    # generate roughness PSD
+    C0 = config['Roughness'].getfloat("prefactor")
+    nR = config['Roughness'].getint("wavenumber_rolloff")
+    qR = (2*np.pi/L) * nR  # roll-off wave vector
+    nS = config['Roughness'].getint("wavenumber_cutoff")
+    qS = (2*np.pi/L) * nS  # cut-off
+    H = config['Roughness'].getfloat("hurst_exponent")
     roughness = SelfAffineRoughness(C0, qR, qS, H)
     q_2D = wavevector_norm(region.qx, region.qy)
     C_2D = roughness.mapto_psd(q_2D)
+
+    # generate rough surface from PSD
     h1 = PSD_to_height(C_2D, rng=rng)
     h2 = PSD_to_height(C_2D, rng=rng)
 
-    # combine into the model object
-    capi = CapillaryBridge(region, eta, gamma, h1, h2, z1=1*a)
+    # specify the trajectory
+    d_min = config["Trajectory"].getfloat("min_separation")
+    d_max = config["Trajectory"].getfloat("max_separation")
+    d_step = config["Trajectory"].getfloat("step_size")
+
+    # the capillary model object
+    eta = config["Capillary"].getfloat("interface_thickness")
+    theta = config["Capillary"].getfloat("contact_angle_degree")
+    gamma = -np.cos(theta / 180.0 * np.pi)
+    capi = CapillaryBridge(region, eta, gamma, h1, h2)
+
     capi.update_gap()
 
-    # Check the preset volume
-    capi.phi = np.ones_like(h1)
+    # specify liquid volume by a percentage
+    capi.z1 = d_min
+    capi.update_gap()
+    capi.phi = np.ones((N, N))
     capi.update_phase_field()
-    assert capi.volume > V, "The preset volume is too large"
+    V_percent = 0.01 * config["Capillary"].getfloat("liquid_volume_percent")
+    V = capi.volume * V_percent
 
-    # A plot to check
-    data = DropletData(region, eta, h1, h2, capi.displacement, capi.g, capi.phi)
-    fig, ax = plt.subplots()
-    # im = plot_height_topography(ax, data)
-    im = plot_gap_topography(ax, data)
-    plot_contact_topography(ax, data)
-    fig.colorbar(im)
-    plt.show()
-
-    skip = input("Run simulation [Y/n]? ")[:1].upper() == "N"
-    if skip:
-        quit()
 
     # solving parameters
-    k_max = 3000
-    e_conv = 1e-8
-    e_volume = 1e-6
-    c_init = 1e-2
-    c_upper = 1e4
-    beta = 3.0
-    solver = AugmentedLagrangian(k_max, e_conv, e_volume, c_init, c_upper, beta)
+    i_max = config["Solver"].getint("max_nb_iters")
+    l_max = config["Solver"].getint("max_nb_loops")
+    tol_conver = config["Solver"].getfloat("tol_convergence")
+    tol_constr = config["Solver"].getfloat("tol_constraints")
+    c_init = config["Solver"].getfloat("init_penalty_weight")
+    solver = AugmentedLagrangian(i_max, l_max, tol_conver, tol_constr, c_init)
 
-    # random phase field to start
-    phi = rng.random((N, N))
+    # visual check before running
+    if show_me:
+        fig, ax = plt.subplots()
+        # image = ax.pcolormesh(region.xm/a, region.ym/a, h1/a, cmap='hot')
+        image = ax.imshow(h1 / a, interpolation="bicubic", cmap="plasma", extent=[0, N, 0, N])
+        fig.colorbar(image)
 
-    # run simulation routine
-    d_max = 5 * a
-    d_min = 1 * a
-    d_step = 0.1 * a
+        fig, ax = plt.subplots()
+        # image = ax.pcolormesh(region.xm/a, region.ym/a, gap/a, cmap='hot')
+        image = ax.imshow(capi.g / a, interpolation="bicubic", vmin=0, cmap="hot", extent=[0, N, 0, N])
+        fig.colorbar(image)
 
-    path = __file__.replace(".py", ".data")
-    with working_directory(path, read_only=False) as store:
+        plt.show()
+
+        skip = input("Run simulation [Y/n]? ")[:1].upper() == "N"
+        if skip:
+            quit()
+
+    # run the sim
+    with working_directory(working_dir, read_only=False) as store:
+        # clean the working dir
         store.brand_new()
+
+        # start sim with a random initial guess
+        capi.phi = rng.random([N, N])
+        capi.update_phase_field()
         simulate_quasi_static_pull_push(store, capi, solver, V, d_min, d_max, d_step)
+
+
+if __name__ == "__main__":
+    main()
