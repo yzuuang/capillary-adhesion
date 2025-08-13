@@ -116,7 +116,7 @@ class AugmentedLagrangian:
             # convergence criteria
             if norm_lagr_gradient < self.tol_convergence and constr_violation < self.tol_constraint:
                 is_converged = True
-                print(f"Notice: achieving required tolerance at iter#{count}")
+                print(f"Notice: achieving required tolerance at iter #{count}")
                 break
 
             # solve minimisation of augmented lagrangian
@@ -149,9 +149,7 @@ class AugmentedLagrangian:
             # update Lagrangian multiplier following the formula
             lam_plus = lam + c * constr_violation_plus
             # increase penalty weight if the constraint didn't improve enough
-            if not (abs(constr_violation_plus) < self.tol_constraint) and not (
-                abs(constr_violation_plus) < self.sufficient_constr_dec * abs(constr_violation)
-            ):
+            if not (abs(constr_violation_plus) < self.sufficient_constr_dec * abs(constr_violation)):
                 c_plus = c * self.penalty_weight_growth
 
         # check if not solved
