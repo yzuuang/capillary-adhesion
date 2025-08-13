@@ -11,8 +11,6 @@ def get_runtime_dir(name: str):
 
 
 def read_configs(files: list):
-    if not len(files):
-        raise RuntimeError(f"Provide at least one config file.")
     config = configparser.ConfigParser()
     for file in files:
         if not os.path.exists(file):
