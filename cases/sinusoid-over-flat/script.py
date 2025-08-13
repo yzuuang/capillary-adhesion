@@ -1,5 +1,6 @@
 import os
 import sys
+import configparser
 
 import numpy as np
 import numpy.random as random
@@ -14,13 +15,19 @@ from a_package.routine import simulate_quasi_static_pull_push
 show_me = False
 
 # define the working path by file name
-from utils.common import get_runtime_dir, read_configs
+from utils.common import get_runtime_dir
 case_name = os.path.basename(os.path.dirname(__file__))
 working_dir = get_runtime_dir(case_name)
 
 
 def main():
-    config = read_configs(sys.argv[1:])
+    config = configparser.ConfigParser()
+    for file in sys.argv[1:]:
+        if not os.path.exists(file):
+            raise RuntimeError(f"Non-existing file {file}")
+        print(f"Reading config from {file}")
+        config.read(file)
+
     a = config['Grid'].getfloat('pixel_size')
     N = config['Grid'].getint('nb_pixels')
     L = a * N
