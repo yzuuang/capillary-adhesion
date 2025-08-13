@@ -35,12 +35,18 @@ def main():
     # set lowest point to zero
     h1 += np.amax(abs(h1))
 
-    # height profile of flat
-    h2 = np.zeros((N, N))
+    # height profile of sinusoid
+    wave_num = config['Surface'].getint('wavenumber')
+    wave_amp = config['Surface'].getfloat('amplitude')
+    xm = region.xm
+    qx = (2*np.pi / L) * wave_num
+    ym = region.ym
+    qy = (2*np.pi / L) * wave_num
+    h2 = wave_amp * np.cos(qx * xm) * np.cos(qy * ym)
 
     # specify the trajectory
-    d_min = config["Trajectory"].getfloat("min_separation")
-    d_max = config["Trajectory"].getfloat("max_separation")
+    d_min = wave_amp + config["Trajectory"].getfloat("min_separation")
+    d_max = wave_amp + config["Trajectory"].getfloat("max_separation")
     d_step = config["Trajectory"].getfloat("step_size")
 
     # the capillary model object
@@ -49,7 +55,7 @@ def main():
     gamma = -np.cos(theta / 180.0 * np.pi)
     capi = CapillaryBridge(region, eta, gamma, h1, h2)
 
-    # specify liquid volume by a percentage
+    # set liquid volume
     capi.z1 = d_min
     capi.update_gap()
     capi.phi = np.ones((N, N))
