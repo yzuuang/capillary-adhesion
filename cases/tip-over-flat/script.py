@@ -10,12 +10,12 @@ from a_package.storing import working_directory
 from a_package.routine import simulate_quasi_static_pull_push
 from a_package.visualizing import *
 
+from utils.common import get_runtime_dir, read_configs
+
 
 show_me = False
 
 # define the working path by file name
-from utils.common import get_runtime_dir, read_configs
-
 case_name = os.path.basename(os.path.dirname(__file__))
 working_dir = get_runtime_dir(case_name)
 
@@ -43,7 +43,7 @@ def main():
     d_max = config["Trajectory"].getfloat("max_separation")
     d_step = config["Trajectory"].getfloat("step_size")
 
-    # the capillary model object
+    # create the capillary model
     eta = config["Capillary"].getfloat("interface_thickness")
     theta = config["Capillary"].getfloat("contact_angle_degree")
     gamma = -np.cos(theta / 180.0 * np.pi)
@@ -78,11 +78,16 @@ def main():
         fig.colorbar(image)
 
         plt.show()
+        skip = input("Run simulation [Y/n]? ")[:1].upper() == "N"
+        if skip:
+            sys.exit(0)
 
     # run the sim
     with working_directory(working_dir, read_only=False) as store:
+        # clean the working dir
         store.brand_new()
-        # random initial guess
+
+        # start sim with random initial guess
         capi.phi = np.random.rand(N, N)
         capi.update_phase_field()
         simulate_quasi_static_pull_push(store, capi, solver, V, d_min, d_max, d_step)
