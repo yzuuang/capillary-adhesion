@@ -11,16 +11,15 @@ from a_package.solving import AugmentedLagrangian
 from a_package.storing import working_directory
 from a_package.visualizing import *
 
-from utils.common import get_runtime_dir, read_configs
-
 
 show_me = False
 
 # define the working path by file name
+from utils.common import get_runtime_dir, read_configs
+
 case_name = os.path.basename(os.path.dirname(__file__))
 working_dir = get_runtime_dir(case_name)
 
-# get a random seed
 seed = random.SeedSequence().entropy
 print(f"seed = {seed}")
 rng = random.default_rng(seed)
@@ -71,6 +70,7 @@ def main():
     V_percent = 0.01 * config["Capillary"].getfloat("liquid_volume_percent")
     V = capi.volume * V_percent
 
+
     # solving parameters
     i_max = config["Solver"].getint("max_nb_iters")
     l_max = config["Solver"].getint("max_nb_loops")
@@ -88,13 +88,14 @@ def main():
 
         fig, ax = plt.subplots()
         # image = ax.pcolormesh(region.xm/a, region.ym/a, gap/a, cmap='hot')
-        image = ax.imshow(capi.g / a, vmin=0, interpolation="bicubic", vmin=0, cmap="hot", extent=[0, N, 0, N])
+        image = ax.imshow(capi.g / a, interpolation="bicubic", vmin=0, cmap="hot", extent=[0, N, 0, N])
         fig.colorbar(image)
 
         plt.show()
+
         skip = input("Run simulation [Y/n]? ")[:1].upper() == "N"
         if skip:
-            sys.exit(0)
+            quit()
 
     # run the sim
     with working_directory(working_dir, read_only=False) as store:
