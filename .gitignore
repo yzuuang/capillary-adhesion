@@ -1,12 +1,12 @@
-# Temporary files
 *~
-/runtime
-
-# Python related
 *.pyc
 *.cpython*.so
-**/__pycache__
-/build
-/dist
+__pycache__
+../build
+dist
 *egg-info
-/venv
+
+/archive
+/byproduct
+/chaos
+/data
