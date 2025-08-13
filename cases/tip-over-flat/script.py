@@ -1,92 +1,77 @@
-import os
-import sys
-
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.modelling import Region, CapillaryBridge
+from a_package.modelling import Region, wavevector_norm, SelfAffineRoughness, PSD_to_height, CapillaryBridge
 from a_package.solving import AugmentedLagrangian
 from a_package.storing import working_directory
-from a_package.routine import simulate_quasi_static_pull_push
+from a_package.routine import simulate_quasi_static_slide
 from a_package.visualizing import *
 
 
-show_me = False
-
-# define the working path by file name
-from utils.common import get_runtime_dir, read_configs
-
-case_name = os.path.basename(os.path.dirname(__file__))
-working_dir = get_runtime_dir(case_name)
-
-
-def main():
-    config = read_configs(sys.argv[1:])
-
-    # grid
-    a = config["Grid"].getfloat("pixel_size")
-    N = config["Grid"].getint("nb_pixels")
-    L = a * N
-    region = Region(a, L, L, N, N)
-
-    # height profile of a spherical tip
-    R = config["Surface"].getfloat("tip_radius")
-    h1 = -np.sqrt(np.clip(R**2 - (region.xm - 0.5 * region.lx) ** 2 - (region.ym - 0.5 * region.ly) ** 2, 0, None))
-    # set lowest point to zero
-    h1 += np.amax(abs(h1))
-
-    # height profile of flat
-    h2 = np.zeros((N, N))
-
-    # specify the trajectory
-    d_min = config["Trajectory"].getfloat("min_separation")
-    d_max = config["Trajectory"].getfloat("max_separation")
-    d_step = config["Trajectory"].getfloat("step_size")
-
-    # the capillary model object
-    eta = config["Capillary"].getfloat("interface_thickness")
-    theta = config["Capillary"].getfloat("contact_angle_degree")
-    gamma = -np.cos(theta / 180.0 * np.pi)
-    capi = CapillaryBridge(region, eta, gamma, h1, h2)
-
-    # specify liquid volume by a percentage
-    capi.z1 = d_min
-    capi.update_gap()
-    capi.phi = np.ones((N, N))
-    capi.update_phase_field()
-    V_percent = 0.01 * config["Capillary"].getfloat("liquid_volume_percent")
-    V = capi.volume * V_percent
-
-    # solving parameters
-    i_max = config["Solver"].getint("max_nb_iters")
-    l_max = config["Solver"].getint("max_nb_loops")
-    tol_conver = config["Solver"].getfloat("tol_convergence")
-    tol_constr = config["Solver"].getfloat("tol_constraints")
-    c_init = config["Solver"].getfloat("init_penalty_weight")
-    solver = AugmentedLagrangian(i_max, l_max, tol_conver, tol_constr, c_init)
-
-    # Visual check before running
-    if show_me:
-        fig, ax = plt.subplots()
-        # image = ax.pcolormesh(region.xm/a, region.ym/a, h1/a, cmap='hot')
-        image = ax.imshow(h1 / a, interpolation="bicubic", cmap="plasma", extent=[0, N, 0, N])
-        fig.colorbar(image)
-
-        fig, ax = plt.subplots()
-        # image = ax.pcolormesh(region.xm/a, region.ym/a, gap/a, cmap='hot')
-        image = ax.imshow(capi.g / a, interpolation="bicubic", cmap="hot", extent=[0, N, 0, N])
-        fig.colorbar(image)
-
-        plt.show()
-
-    # run the sim
-    with working_directory(working_dir, read_only=False) as store:
-        store.brand_new()
-        # random initial guess
-        capi.phi = np.random.rand(N, N)
-        capi.update_phase_field()
-        simulate_quasi_static_pull_push(store, capi, solver, V, d_min, d_max, d_step)
+# For the reproducibility of surface heights
+seed = 0
 
 
 if __name__ == "__main__":
-    main()
+    # modelling parameters
+    eta = 0.05    # interface width
+    N = 256       # num of nodes along one axis
+    L = N * eta   # lateral size
+
+    # the region where simulation runs
+    region = Region(L, L, N, N)
+
+    # generate "one-peak" plates
+    C0 = 1e6  # prefactor+
+    qR = 2*np.pi / L  # roll-off
+    qS = qR * 1.02    # cut-off
+    H = 0.95  # Hurst exponent
+    roughness = SelfAffineRoughness(C0, qR, qS, H)
+    q_2D = wavevector_norm(region.qx, region.qy)
+    C_2D = roughness.mapto_psd(q_2D)
+
+    # the base body is the negation of the top
+    h1 = PSD_to_height(C_2D, seed)
+    h2 = np.negative(h1)  # Base height is the inverse of the top
+    # h2 = np.zeros_like(h1)  # Flat base
+
+    # combine into the model object
+    capi = CapillaryBridge(region, eta, h1, h2)
+
+    # Set the gap such that only the peaks are in contact
+    capi.z1 = abs(capi.h1.min()) + capi.h2.max() - eta
+    capi.update_gap()
+
+    # set the volume such that it is almost full at the start of the simulation
+    capi.phi = np.ones((region.nx, region.ny))
+    capi.update_phase_field()
+    V = capi.volume * 0.85
+
+    # Check the gap profile
+    data = DropletData(region, eta, h1, h2, capi.displacement, capi.g, capi.phi, capi.force)
+    data.g = capi.g
+    fig, ax = plt.subplots()
+    m = plot_gap_topography(ax, data)
+    plot_contact_topography(ax, data)
+    fig.colorbar(m)
+    plt.show()
+
+    skip = input("Run simulation [Y/n]? ").upper() == "N"
+    if skip:
+        quit()
+
+    # solving parameters
+    k_max = 2000
+    e_conv = 1e-8
+    e_volume = 1e-6
+    c_init = 1e-1
+    c_upper = 1e3
+    beta = 3.0
+    solver = AugmentedLagrangian(k_max, e_conv, e_volume, c_init, c_upper, beta)
+
+    # run simulation routine
+    m_track = [(0, i) for i in range(3)]
+    path = __file__.replace(".py", ".data")
+    with working_directory(path, read_only=False) as store:
+        # store.brand_new()
+        simulate_quasi_static_slide(store, capi, solver, V, m_track)
