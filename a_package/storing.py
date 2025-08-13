@@ -83,7 +83,7 @@ class FilesToReadWrite(FilesToRead):
 
     def pack(self):
         # For the sake of immutability, mark it with a timestamp
-        timestamp = dt.datetime.now(tz=dt.timezone.utc).strftime("%Y%m%dT%H.%M.%S")
+        timestamp = dt.datetime.now().strftime("%y%m%d-%H%M%S")
         target_path = f"{self._path_root}{_dash}{timestamp}"
         shutil.make_archive(target_path, _archive_format)
 
