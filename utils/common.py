@@ -2,14 +2,6 @@ import os
 import configparser
 
 
-repo_root = os.getenv('PYTHONPATH')
-
-
-def get_runtime_dir(name: str):
-    """A dedicated directory to dump outputs on-the-fly."""
-    return os.path.join(repo_root, 'runtime', name)
-
-
 def read_configs(files: list):
     if not len(files):
         raise RuntimeError(f"Provide at least one config file.")
