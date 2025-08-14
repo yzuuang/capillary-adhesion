@@ -49,9 +49,9 @@ def register_run(base_dir_path, script_path, *params_paths, runtime_root=None):
     # collect metadata
     metadata = {
         "run_id": run_id,
-        "time": time.strftime("%Y-%m-%dT%H:%M:%S.%f", current_time),
-        "script": str(script_path),
-        "parameters": [str(each_params) for each_params in params_paths],
+        "time": time.strftime("%Y-%m-%dT%H:%M:%S", current_time),
+        "script": str(os.path.abspath(script_path)),
+        "parameters": [str(os.path.abspath(each_params)) for each_params in params_paths],
     }
     run_dir.update_metadata(metadata)
 
