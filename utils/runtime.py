@@ -40,6 +40,7 @@ def register_run(base_dir_path, script_path, *params_paths, runtime_root=None):
     # create a dedicated folder for this simulation run
     run_dir_path = os.path.join(runtime_root, base_dir_path, run_id)
     run_dir = RunDir(run_dir_path)
+    run_dir.setup()
 
     # put in initial values
     for each_params in params_paths:
@@ -57,12 +58,30 @@ def register_run(base_dir_path, script_path, *params_paths, runtime_root=None):
     return run_dir
 
 
+def retrieve_run(base_dir_path, run_id, runtime_root=None):
+    """
+    Retrieve the folder of the specified run.
+    ---
+    base_dir_path: should be a relative path from runtime_root.
+    """
+
+    # default
+    if runtime_root is None:
+        runtime_root = os.path.join(repo_root, runtime_dirname)
+
+    # get the dedicated folder
+    run_dir_path = os.path.join(runtime_root, base_dir_path, run_id)
+    return RunDir(run_dir_path)
+
+
 class RunDir:
 
     def __init__(self, path):
         self.path = Path(path)
+        self.run_id = os.path.basename(self.path)
 
-        # create the folder and all its sub-folders
+    def setup(self):
+        # create folders and files
         self.path.mkdir(parents=True, exist_ok=False)
         self.intermediate_dir.mkdir()
         self.parameters_dir.mkdir()
