@@ -7,17 +7,16 @@ from a_package.visualizing import *
 
 import matplotlib.pyplot as plt
 
-from utils.common import get_runtime_dir
-# sim_case = 'tip_over_pattern'
-sim_case = 'sinusoid_over_flat'
-# sim_case = 'flat_over_flat'
-work_path = get_runtime_dir(sim_case)
+from utils.runtime import retrieve_run
 
 
 def main():
-    with working_directory(work_path, read_only=True) as store:
-        pr = store.load("Processed", "result", ProcessedResult)
-    filename_base = __file__.replace(".py", f"---{sim_case}")
+    sim_case = sys.argv[1]
+    run_id = sys.argv[2]
+    run_dir = retrieve_run(sim_case, run_id)
+    with working_directory(run_dir.results_dir, read_only=True) as store:
+        pr = store.load("result", ProcessedResult)
+    filename_base = os.path.join(run_dir.visuals_dir, f"overview---{sim_case}")
 
     latexify_plot(15)
 
