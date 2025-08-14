@@ -8,20 +8,23 @@ import matplotlib.pyplot as plt
 from a_package.modelling import Region, CapillaryBridge
 from a_package.solving import AugmentedLagrangian
 from a_package.storing import working_directory
-from a_package.routine import simulate_quasi_static_pull_push
+from a_package.routine import simulate_quasi_static_pull_push, post_process
 
-from utils.common import get_runtime_dir, read_configs
+from utils.common import read_configs
+from utils.runtime import register_run
 
 
 show_me = False
 
-# define the working path by file name
-case_name = os.path.basename(os.path.dirname(__file__))
-working_dir = get_runtime_dir(case_name)
-
 
 def main():
-    config = read_configs(sys.argv[1:])
+    # setup folder for running
+    case_name = os.path.basename(os.path.dirname(__file__))
+    params_files = sys.argv[1:]
+    run = register_run(case_name, __file__, *params_files)
+
+    # read parameters
+    config = read_configs(params_files)
 
     # grid
     a = config['Grid'].getfloat('pixel_size')
@@ -86,14 +89,15 @@ def main():
             sys.exit(0)
 
     # run simulation routine
-    with working_directory(working_dir, read_only=False) as store:
-        # clean the working dir
-        store.brand_new()
-
+    with working_directory(run.intermediate_dir, read_only=False) as store:
         # start sim with random initial guess
-        capi.phi = random.rand(N, N) 
+        capi.phi = random.rand(N, N)
         capi.update_phase_field()
-        simulate_quasi_static_pull_push(store, capi, solver, V, d_min, d_max, d_step)
+        sim = simulate_quasi_static_pull_push(store, capi, solver, V, d_min, d_max, d_step)
+
+    with working_directory(run.results_dir, read_only=False) as store:
+        p_sim = post_process(sim)
+        store.save("result", p_sim)
 
 
 if __name__ == '__main__':
