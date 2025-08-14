@@ -91,8 +91,8 @@ class ProcessedResult:
 def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
                                     V: float, d_min: float, d_max: float, d_step: float):
     # save the configurations
-    store.save("Simulation", "modelling", capi)
-    store.save("Simulation", "solving", solver)
+    store.save("modelling", capi)
+    store.save("solving", solver)
     sim = SimulationResult("modelling.json", "solving.json", [])
 
     # generate all `d` (mean distances) values
@@ -130,27 +130,25 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
         # capi.phi = capi.squashing(x.reshape(capi.region.nx, capi.region.ny))
         data = SimulationStep([0,0], d, t_exec, capi.phi, lam)
-        store.save("Simulation", f"steps---{index}", data)
+        store.save(f"steps---{index}", data)
         sim.steps.append(f"steps---{index}.json")
 
         # Check the bounds on phase field
         capi.validate_phase_field()
 
     # Save simulation results
-    store.save("Simulation", "result", sim)
+    store.save("result", sim)
 
     # Load again to get all data (because they were saved part by part)
-    sim = store.load("Simulation", "result", SimulationResult)
-    # Post-process & save
-    p_sim = post_process(sim)
-    store.save("Processed", "result", p_sim)
+    sim = store.load("result", SimulationResult)
+    return sim
 
 
 def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
                                 V: float, slide_by_indices: list[tuple[int, int]]):
     # save the configurations
-    store.save("Simulation", "modelling", capi)
-    store.save("Simulation", "solving", solver)
+    store.save("modelling", capi)
+    store.save("solving", solver)
     sim = SimulationResult("modelling.json", "solving.json", [])
 
     # inform
@@ -174,17 +172,15 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
         # save the result
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
         data = SimulationStep(m, capi.z1, t_exec, capi.phi, lam)
-        store.save("Simulation", f"steps---{index}", data)
+        store.save(f"steps---{index}", data)
         sim.steps.append(f"steps---{index}.json")
 
         # Check the bounds on phase field
         capi.validate_phase_field()
 
     # Save simulation results
-    store.save("Simulation", "result", sim)
+    store.save("result", sim)
 
     # Load again to get all data (because they were saved part by part)
-    sim = store.load("Simulation", "result", SimulationResult)
-    # Post-process & save
-    p_sim = post_process(sim)
-    store.save("Processed", "result", p_sim)
+    sim = store.load("result", SimulationResult)
+    return sim
