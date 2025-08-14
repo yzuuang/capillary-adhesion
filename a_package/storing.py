@@ -51,35 +51,21 @@ class FilesToRead:
     def __init__(self, path):
         self._path_root = path
 
-    @contextlib.contextmanager
-    def _cd(self, group: str):
-        path_group = os.path.join(self._path_root, group)
-        os.chdir(path_group)
-        try:
-            yield
-        finally:
-            os.chdir(self._path_root)
-
-    def load(self, group: str, label: str, DataType=None):
-        with self._cd(group):
-            data = _load_here(label)
-            if DataType is None:
-                return data
-            if dc.is_dataclass(DataType):
-                return _recover_dataclass(data, DataType)
-            return DataType(data)
+    def load(self, label: str, DataType=None):
+        data = _load_here(label)
+        if DataType is None:
+            return data
+        if dc.is_dataclass(DataType):
+            return _recover_dataclass(data, DataType)
+        return DataType(data)
 
 
 class FilesToReadWrite(FilesToRead):
 
-    def save(self, group: str, label: str, data):
-        if not os.path.exists(group):
-            os.mkdir(group)
-
-        with self._cd(group):
-            if dc.is_dataclass(data):
-                data = dc.asdict(data)
-            _save_here(label, data)
+    def save(self, label: str, data):
+        if dc.is_dataclass(data):
+            data = dc.asdict(data)
+        _save_here(label, data)
 
     def pack(self):
         # For the sake of immutability, mark it with a timestamp
