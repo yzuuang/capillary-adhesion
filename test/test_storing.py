@@ -49,7 +49,6 @@ def assert_equal(loaded, saved):
 
 
 _path = __file__.replace(".py", ".data")
-_group = "some group"
 _common_label = "some dataset"
 
 
@@ -59,10 +58,10 @@ def test_save_load_flat():
     with working_directory(_path, read_only=False) as store:
         store.brand_new()
         test_data = SomeDataclass.random()
-        store.save(_group, label, test_data)
+        store.save(label, test_data)
 
     with working_directory(_path, read_only=True) as store:
-        loaded_test_data = store.load(_group, label, SomeDataclass)
+        loaded_test_data = store.load(label, SomeDataclass)
 
     assert_equal(loaded_test_data, test_data)
 
@@ -72,9 +71,9 @@ def test_save_load_nested():
 
     with working_directory(_path, read_only=False) as store:
         test_data = NestedDataclass([SomeDataclass.random() for _ in range(11)])
-        store.save(_group, label, test_data)
+        store.save(label, test_data)
 
     with working_directory(_path, read_only=True) as store:
-        loaded_test_data = store.load(_group, label, NestedDataclass)
+        loaded_test_data = store.load(label, NestedDataclass)
 
     assert_equal(loaded_test_data, test_data)
