@@ -3,11 +3,15 @@ Solving the numerical optimization problem. No physics meaning in this file.
 """
 
 import dataclasses as dc
+import logging
 import timeit
 import typing as t_
 
 import numpy as np
 import scipy.optimize as optimize
+
+
+logger = logging.getLogger(__name__)
 
 
 @dc.dataclass
@@ -61,28 +65,36 @@ class AugmentedLagrangian:
         # print headers
         nabla = "\u2207"
         delta = "\u0394"
-        tabel_headers = [
+        tabel_headers_line1 = [
             "Loop",
             "f",
             f"|Pr({nabla}L)|",
             "|g|",
             f"|{delta} lam|",
-            "c",
+            "c"
+        ]
+        tabel_headers_line2 = [
             "Iter",
             f"|res {nabla}|",
             "Message",
         ]
         separator = "  "
-        print(
-            *[
-                "{:<4}".format(col_name) if col_name in ["Loop", "Iter"] else "{:<8}".format(col_name)
-                for col_name in tabel_headers
-            ],
-            sep=separator,
+        logger.info(
+            separator.join(
+                "{:<4}".format(col_name) if col_name in ["Loop"] else "{:<8}".format(col_name)
+                for col_name in tabel_headers_line1
+            )
         )
-        t_exec = 0
+        logger.info(
+            separator.join(
+                "{:<4}".format(col_name) if col_name in ["Iter"] else "{:<8}".format(col_name)
+                for col_name in tabel_headers_line2
+            )
+        )
+        logger.info("="*50)
 
         # initial values
+        t_exec = 0
         x_plus = x0
         lam_plus = lam0
         c_plus = self.init_penalty_weight
@@ -128,12 +140,12 @@ class AugmentedLagrangian:
                 f"{norm_delta_lam:>8.1e}",
                 f"{c:>8.1e}",
             ]
-            print(separator.join(padded_literals), end=separator, flush=True)
+            logger.info(separator.join(padded_literals))
 
             # convergence criteria
             if norm_lagr_gradient < self.tol_convergence and constr_violation < self.tol_constraint:
                 is_converged = True
-                print(f"Notice: achieving required tolerance at iter#{count}")
+                logger.info(f"Notice: achieving required tolerance at iter#{count}")
                 break
 
             # solve minimisation of augmented lagrangian
@@ -155,7 +167,8 @@ class AugmentedLagrangian:
             # print inner solver progress
             res_norm_grad = max(abs(info["grad"]))
             padded_literals = [f"{info['nit']:>4d}", f"{res_norm_grad:>8.1e}", info["task"]]
-            print(separator.join(padded_literals))
+            logger.info(separator.join(padded_literals))
+            logger.info("-"*50)
 
             # if reaches maximal iterations, simply do another loop to run more iterations
             # only the "x" is updated
@@ -176,13 +189,17 @@ class AugmentedLagrangian:
             ):
                 c_plus = c * self.penalty_weight_growth
 
-        # show a warning if convergence is not achieved
+        # show a warning under necessary conditions
         if not is_converged:
-            print(f"WARNING: NOT CONVERGED.")
+            logger.warning("WARNING: not converged.")
+        if reached_iter_limit:
+            logger.warning("WARNING: reached inner iteration limit.")
+        if had_abnormal_stop:
+            logger.warning("WARNING: had abnormal stop.")
 
         # more prints
-        print(f"Total time for inner solver: {t_exec:.1e} seconds.")
-        print(f"Ends with dual variable lambda={lam:.6f}")
+        logger.info(f"Total time for inner solver: {t_exec:.1e} seconds.")
+        logger.info(f"Ends with dual variable lambda={lam:.6f}")
 
         return SolverResult(x, lam, t_exec, is_converged, reached_iter_limit, had_abnormal_stop)
 

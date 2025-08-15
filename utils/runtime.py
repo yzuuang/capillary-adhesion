@@ -40,7 +40,8 @@ def register_run(base_dir_path, script_path, *params_paths, runtime_root=None):
     # create a dedicated folder for this simulation run
     run_dir_path = os.path.join(runtime_root, base_dir_path, run_id)
     run_dir = RunDir(run_dir_path)
-    run_dir.setup()
+    run_dir.setup_directory()
+    run_dir.switch_log_file()
 
     # put in initial values
     for each_params in params_paths:
@@ -80,7 +81,7 @@ class RunDir:
         self.path = Path(path)
         self.run_id = os.path.basename(self.path)
 
-    def setup(self):
+    def setup_directory(self):
         # create folders and files
         self.path.mkdir(parents=True, exist_ok=False)
         self.intermediate_dir.mkdir()
@@ -91,15 +92,19 @@ class RunDir:
         with open(self.metadata_file, 'w', encoding='utf-8') as fp:
             json.dump({}, fp)
 
-        # prepare the logger
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        file_handler = logging.FileHandler(self.log_file)
-        file_handler.setLevel(logging.INFO)
-        logger = self.get_logger()
-        logger.addHandler(console_handler)
-        logger.addHandler(file_handler)
-        logger.setLevel(logging.INFO)
+    def switch_log_file(self):
+        root_logger = logging.getLogger()
+
+        # remove all existing file handler
+        for h in list(root_logger.handlers):
+            if isinstance(h, logging.FileHandler):
+                root_logger.removeHandler(h)
+                h.close()
+
+        # add its own file hander
+        file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter("%(name)s %(levelname)s %(message)s"))
+        root_logger.addHandler(file_handler)
 
     @property
     def intermediate_dir(self):
@@ -127,9 +132,6 @@ class RunDir:
 
     def add_params_file(self, file_path):
         shutil.copy2(file_path, self.parameters_dir)
-
-    def get_logger(self):
-        return logging.getLogger(self.run_id)
 
     def update_metadata(self, new_info):
         with open(self.metadata_file, 'r', encoding='utf-8') as fp:
