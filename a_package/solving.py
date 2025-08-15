@@ -60,7 +60,18 @@ class AugmentedLagrangian:
     ):
         # print headers
         nabla = "\u2207"
-        tabel_headers = ["Loop", "f", f"|Pr({nabla}L)|", "|g|", "lam", "c", "Iter", f"|res {nabla}|", "Message"]
+        delta = "\u0394"
+        tabel_headers = [
+            "Loop",
+            "f",
+            f"|Pr({nabla}L)|",
+            "|g|",
+            f"|{delta} lam|",
+            "c",
+            "Iter",
+            f"|res {nabla}|",
+            "Message",
+        ]
         separator = "  "
         print(
             *[
@@ -76,8 +87,12 @@ class AugmentedLagrangian:
         lam_plus = lam0
         c_plus = self.init_penalty_weight
         is_converged = False
+        lam = lam0  # only for the purpose of printing delta-lam at count=0
 
         for count in range(self.max_outer_loop):
+            # compute values that must be evaluated before update
+            norm_delta_lam = abs(lam_plus - lam)
+
             # update primal, dual and penalty parameter
             # for primal, clip the solution to fit within the feasible region
             x = np.clip(x_plus, x_lb, x_ub)
@@ -108,7 +123,7 @@ class AugmentedLagrangian:
                 f"{obj_value:>8.1e}",
                 f"{norm_lagr_gradient:>8.1e}",
                 f"{constr_violation:>8.1e}",
-                f"{lam:>8.1e}",
+                f"{norm_delta_lam:>8.1e}",
                 f"{c:>8.1e}",
             ]
             print(separator.join(padded_literals), end=separator, flush=True)
@@ -154,10 +169,12 @@ class AugmentedLagrangian:
             ):
                 c_plus = c * self.penalty_weight_growth
 
-        # check if not solved
+        # show a warning if convergence is not achieved
         if not is_converged:
             print(f"WARNING: NOT CONVERGED.")
 
+        # more prints
         print(f"Total time for inner solver: {t_exec:.1e} seconds.")
+        print(f"Ends with dual variable lambda={lam:.6f}")
 
         return x, lam, t_exec
