@@ -116,6 +116,11 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
         f"Problem size: {capi.region.nx}x{capi.region.ny}. "
         f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}"
     )
+    report = {
+        'not_converged': [],
+        'iter_limit': [],
+        'abnormal_stop': [],
+    }
 
     # simulate
     x = capi.phi.ravel()
@@ -129,7 +134,13 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        [x, lam, t_exec, *_] = solver.solve_minimisation(numopt, x, lam, 0, 1)
+        [x, lam, t_exec, *flags] = solver.solve_minimisation(numopt, x, lam, 0, 1)
+        if not flags[0]:
+            report["not_converged"].append(index)
+        if flags[1]:
+            report["iter_limit"].append(index)
+        if flags[2]:
+            report["abnormal_stop"].append(index)
 
         # save the results
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
@@ -140,6 +151,12 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
 
         # Check the bounds on phase field
         capi.validate_phase_field()
+
+    # report
+    if all(not len(v) for v in report.values()):
+        logger.info("Congrats! All simulation steps went well.")
+    else:
+        logger.warning(f"The following steps may have problems:\n {report}")
 
     # Save simulation results
     store.save("result", sim)
@@ -161,6 +178,11 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
         f"Problem size: {capi.region.nx}x{capi.region.ny}. "
         f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}"
     )
+    report = {
+        'not_converged': [],
+        'iter_limit': [],
+        'abnormal_stop': [],
+    }
 
     # simulate
     x = capi.phi.ravel()
@@ -173,7 +195,13 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        [x, lam, t_exec, *_] = solver.solve_minimisation(numopt, x, lam, 0, 1)
+        [x, lam, t_exec, *flags] = solver.solve_minimisation(numopt, x, lam, 0, 1)
+        if not flags[0]:
+            report["not_converged"].append(index)
+        if flags[1]:
+            report["iter_limit"].append(index)
+        if flags[2]:
+            report["abnormal_stop"].append(index)
 
         # save the result
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
@@ -183,6 +211,12 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
 
         # Check the bounds on phase field
         capi.validate_phase_field()
+
+    # report
+    if all(not len(v) for v in report.values()):
+        logger.info("Congrats! All simulation steps went well.")
+    else:
+        logger.warning(f"The following steps may have problems:\n {report}")
 
     # Save simulation results
     store.save("result", sim)
