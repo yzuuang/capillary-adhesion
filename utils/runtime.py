@@ -129,7 +129,7 @@ class RunDir:
         shutil.copy2(file_path, self.parameters_dir)
 
     def get_logger(self):
-        return logging.getLogger(str(self.path))
+        return logging.getLogger(self.run_id)
 
     def update_metadata(self, new_info):
         with open(self.metadata_file, 'r', encoding='utf-8') as fp:
