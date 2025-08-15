@@ -124,7 +124,7 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        x, lam, t_exec = solver.solve_minimisation(numopt, x, lam, 0, 1)
+        [x, lam, t_exec, *_] = solver.solve_minimisation(numopt, x, lam, 0, 1)
 
         # save the results
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
@@ -167,7 +167,7 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
 
         # solve the problem
         numopt = capi.formulate_with_constant_volume(V)
-        x, lam, t_exec = solver.solve_minimisation(numopt, x, lam, 0, 1)
+        [x, lam, t_exec, *_] = solver.solve_minimisation(numopt, x, lam, 0, 1)
 
         # save the result
         capi.phi = x.reshape(capi.region.nx, capi.region.ny)
