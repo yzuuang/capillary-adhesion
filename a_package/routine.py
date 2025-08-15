@@ -3,6 +3,7 @@ Simulation routines: modelling, solving and post-processing.
 """
 
 import dataclasses as dc
+import logging
 import math
 
 import numpy as np
@@ -10,6 +11,9 @@ import numpy as np
 from a_package.modelling import CapillaryBridge
 from a_package.solving import AugmentedLagrangian
 from a_package.storing import FilesToReadWrite
+
+
+logger = logging.getLogger(__name__)
 
 
 @dc.dataclass
@@ -108,16 +112,17 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
     all_d = np.round(all_d, n_decimals)
 
     # inform
-    print(f"Problem size: {capi.region.nx}x{capi.region.ny}. "
-          f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}")
+    logger.info(
+        f"Problem size: {capi.region.nx}x{capi.region.ny}. "
+        f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}"
+    )
 
     # simulate
     x = capi.phi.ravel()
     lam = 0.0
     for index, d in enumerate(all_d):
         # update the parameter
-        print(f""
-              f"Parameter of interest: mean distance={d}")
+        logger.info(f"Parameter of interest: mean distance={d}")
         capi.z1 = d
         capi.update_gap()
         capi.update_phase_field()
@@ -152,16 +157,17 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
     sim = SimulationResult("modelling.json", "solving.json", [])
 
     # inform
-    print(f"Problem size: {capi.region.nx}x{capi.region.ny}. "
-          f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}")
+    logger.info(
+        f"Problem size: {capi.region.nx}x{capi.region.ny}. "
+        f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}"
+    )
 
     # simulate
     x = capi.phi.ravel()
     lam = 0.0
     for index, m in enumerate(slide_by_indices):
         # update the parameter
-        print(f""
-              f"Parameter of interest: slide by indices={m}")
+        logger.info(f"Parameter of interest: slide by indices={m}")
         capi.ix1_iy1 = m
         capi.update_gap()
 

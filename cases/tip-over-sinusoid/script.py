@@ -10,10 +10,11 @@ from a_package.solving import AugmentedLagrangian
 from a_package.storing import working_directory
 from a_package.routine import simulate_quasi_static_pull_push, post_process
 
-from utils.common import read_configs
+from utils.common import init_logging, read_configs
 from utils.runtime import register_run
 
 
+init_logging()
 show_me = False
 
 
