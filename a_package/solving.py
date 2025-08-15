@@ -87,6 +87,8 @@ class AugmentedLagrangian:
         lam_plus = lam0
         c_plus = self.init_penalty_weight
         is_converged = False
+        reached_iter_limit = False
+        had_abnormal_stop = False
         lam = lam0  # only for the purpose of printing delta-lam at count=0
 
         for count in range(self.max_outer_loop):
@@ -158,6 +160,11 @@ class AugmentedLagrangian:
             # if reaches maximal iterations, simply do another loop to run more iterations
             # only the "x" is updated
             if info["warnflag"] == 1:
+                reached_iter_limit = True
+                continue
+            # else if it stops due to some "abnomral" reason
+            elif info["warnflag"] == 2:
+                had_abnormal_stop = True
                 continue
             # else, it achieves convergence
             constr_violation_plus = numopt.g(x_plus)
@@ -177,4 +184,13 @@ class AugmentedLagrangian:
         print(f"Total time for inner solver: {t_exec:.1e} seconds.")
         print(f"Ends with dual variable lambda={lam:.6f}")
 
-        return x, lam, t_exec
+        return SolverResult(x, lam, t_exec, is_converged, reached_iter_limit, had_abnormal_stop)
+
+
+class SolverResult(t_.NamedTuple):
+    primal: np.ndarray
+    dual: float
+    time: float
+    is_converged: bool
+    reached_iter_limit: bool
+    had_abnormal_stop: bool
