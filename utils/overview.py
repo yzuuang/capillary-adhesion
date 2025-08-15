@@ -11,24 +11,23 @@ from utils.runtime import retrieve_run
 
 
 def main():
-    sim_case = sys.argv[1]
-    run_id = sys.argv[2]
+    anim = create_overview_animation(sys.argv[1], sys.argv[2])
+    plt.show()
+
+
+def create_overview_animation(sim_case, run_id):
+    # retrieve processed result
     run_dir = retrieve_run(sim_case, run_id)
     with working_directory(run_dir.results_dir, read_only=True) as store:
         pr = store.load("result", ProcessedResult)
-    filename_base = os.path.join(run_dir.visuals_dir, f"overview---{sim_case}")
-
+    # create anime
     latexify_plot(15)
-
     anim = animate_droplet_evolution_with_curves(pr)
+    # save it
+    filename_base = os.path.join(run_dir.visuals_dir, f"overview---{sim_case}")
     anim.save(f"{filename_base}.mp4", writer="ffmpeg")
-
-    # [fig, ax] = plt.subplots(1, 1, figsize=(10, 3), constrained_layout=True)
-    # plot_normal_force(ax, pr, None)
-    # ax.set_ylabel(r"Force $F/\gamma\eta$")
-    # ax.set_xlabel('Simulation progress')
-    # fig.savefig(f"{filename_base}.svg", dpi=450)
-    plt.show()
+    # return the anime, so it can be shown in interactive run
+    return anim
 
 
 def animate_droplet_evolution(pr: ProcessedResult):

@@ -12,6 +12,7 @@ from a_package.routine import simulate_quasi_static_pull_push, post_process
 
 from utils.common import init_logging, read_configs
 from utils.runtime import register_run
+from utils.overview import create_overview_animation
 
 
 init_logging()
@@ -99,9 +100,13 @@ def main():
         capi.update_phase_field()
         sim = simulate_quasi_static_pull_push(store, capi, solver, V, d_min, d_max, d_step)
 
+    # post-process
     with working_directory(run.results_dir, read_only=False) as store:
         p_sim = post_process(sim)
         store.save("result", p_sim)
+
+    # visualise
+    create_overview_animation(case_name, run.run_id)
 
 
 if __name__ == "__main__":
