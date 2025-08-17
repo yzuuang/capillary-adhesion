@@ -78,7 +78,9 @@ class CapillaryBridge:
     """
     region: Region
     eta: float
-    gamma: float  # surface tensions: (SL - SG) / LG
+    theta: float
+    """Contact angle. In unit of radius."""
+    # gamma: float  # surface tensions: (SL - SG) / LG
     h1: np.ndarray
     h2: np.ndarray
     ix1_iy1: tuple[int, int] = None
@@ -92,7 +94,10 @@ class CapillaryBridge:
             self.ix1_iy1 = (0, 0)
         # h1_origin = np.roll(self.h1, [-self.ix1_iy1[0], -self.ix1_iy1[1]], axis=(0,1))
         # self.interp_h1 = Bicubic(h1_origin, periodic=True)
-        self.inner = ComputeCapillary(self.region, self.eta, self.gamma)
+        # compute the terms following the formula
+        self.gamma = -np.cos(self.theta)
+        self.curv = 0.5 * (abs(np.sin(self.theta)) + np.asin(np.cos(self.theta)) / np.cos(self.theta))
+        self.inner = ComputeCapillary(self.region, self.curv, self.eta, self.gamma)
 
     def update_gap(self):
         # # Lateral displacement of the solid top
@@ -181,7 +186,7 @@ class ComputeCapillary:
     Integral of double well potential is evaluated via a centroid rule of Quadrature for triangles.
     """
 
-    def __init__(self, region: Region, eta: float, gamma: float):
+    def __init__(self, region: Region, curv: float, eta: float, gamma: float):
         # Number of pixels
         n_pixel = region.nx * region.ny
         # 2 triangle elements per pixel
@@ -192,6 +197,7 @@ class ComputeCapillary:
         self.map = FirstOrderElement(region)
 
         # Copy simple parameters
+        self.curv = curv
         self.eta = eta
         self.gamma = gamma
         self.no_gamma = np.isclose(gamma, 0)
@@ -280,7 +286,7 @@ class ComputeCapillary:
         area_water_solid = self.solid_surface * self.phi_powers[0]
 
         # return surface energy
-        return (area_water_vapour.sum() + self.gamma * area_water_solid.sum()) * self.element_area
+        return (self.curv * area_water_vapour.sum() + self.gamma * area_water_solid.sum()) * self.element_area
 
     def compute_force(self):
         # update necessary power terms
@@ -332,7 +338,7 @@ class ComputeCapillary:
         # Contribution of water-solid surface
         area_water_solid_jacobian = self.solid_surface @ self.map.K_centroid
 
-        return (area_water_vapour_jacobian + self.gamma * area_water_solid_jacobian) * self.element_area
+        return (self.curv * area_water_vapour_jacobian + self.gamma * area_water_solid_jacobian) * self.element_area
 
     def compute_volume(self) -> float:
         return (self.g * self.phi_powers[0]).sum() * self.element_area
