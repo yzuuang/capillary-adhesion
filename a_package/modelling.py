@@ -205,6 +205,8 @@ class ComputeCapillary:
         self.eta = eta
         self.gamma = gamma
         self.no_gamma = np.isclose(gamma, 0)
+        # According to Modica-Mortola's theorem
+        self.perimeter_prefactor = 3.0
 
         # The gap between two solid bodies
         self.g = np.empty((n_element))
@@ -281,7 +283,7 @@ class ComputeCapillary:
         double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
         # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
         square_grad = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
-        area_water_vapour = (double_well + square_grad) * self.g
+        area_water_vapour = self.perimeter_prefactor * (double_well + square_grad) * self.g
 
         # if self.no_gamma:
         #     return area_water_vapour.sum() * self.element_area
@@ -301,7 +303,7 @@ class ComputeCapillary:
         double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
         # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
         square_grad = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
-        perimeter_integrand = (double_well + square_grad)
+        perimeter_integrand = self.perimeter_prefactor * (double_well + square_grad)
 
         return perimeter_integrand.sum() * self.element_area
 
@@ -347,7 +349,7 @@ class ComputeCapillary:
                                                   2 * self.phi_powers[2]) * self.g) @ self.map.K_centroid
 
         # area of water-vapour interface
-        area_water_vapour_jacobian = double_well_jacobian + square_grad_jacobian
+        area_water_vapour_jacobian = self.perimeter_prefactor * (double_well_jacobian + square_grad_jacobian)
 
         # if self.no_gamma:
         #     return area_water_vapour_jacobian * self.element_area
