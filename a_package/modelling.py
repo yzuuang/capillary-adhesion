@@ -140,6 +140,10 @@ class CapillaryBridge:
     @property
     def force(self):
         return self.inner.compute_force()
+    
+    @property
+    def perimeter(self):
+        return self.inner.compute_perimeter()
 
     def formulate_with_constant_volume(self, volume: float):
         def objective(x: np.ndarray):
@@ -276,8 +280,8 @@ class ComputeCapillary:
         # compute at quadrature points: (1/eta) (phi^2 - 2 phi^3 + phi^4)
         double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
         # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
-        perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
-        area_water_vapour = (double_well + perimeter) * self.g
+        square_grad = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
+        area_water_vapour = (double_well + square_grad) * self.g
 
         # if self.no_gamma:
         #     return area_water_vapour.sum() * self.element_area
@@ -288,6 +292,19 @@ class ComputeCapillary:
         # return surface energy
         return (self.curv * area_water_vapour.sum() + self.gamma * area_water_solid.sum()) * self.element_area
 
+    def compute_perimeter(self):
+        # update necessary power terms
+        self.phi_powers[1] = self.phi_powers[0] ** 2
+        self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
+        self.phi_powers[3] = self.phi_powers[1] ** 2
+
+        double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
+        # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
+        square_grad = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
+        perimeter_integrand = (double_well + square_grad)
+
+        return perimeter_integrand.sum() * self.element_area
+
     def compute_force(self):
         # update necessary power terms
         self.phi_powers[1] = self.phi_powers[0] ** 2
@@ -296,10 +313,10 @@ class ComputeCapillary:
 
         # the common part of 3 components
         # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
-        perimeter = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
+        square_grad = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
         # compute at quadrature points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
         double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
-        de_dg = (double_well + perimeter)
+        de_dg = (double_well + square_grad)
 
         # the different part of 3 components
         f_x = (de_dg * self.dg_dx).sum()
@@ -323,14 +340,14 @@ class ComputeCapillary:
         
         # Contribution of water-vapour surface
         # constant within the element: 2 eta g (Dx phi Dx + Dy phi Dy)
-        perimeter_jacobian = (2 * self.eta) * ((self.g * self.dphi_dx) @ self.map.Dx + 
+        square_grad_jacobian = (2 * self.eta) * ((self.g * self.dphi_dx) @ self.map.Dx + 
                                                (self.g * self.dphi_dy) @ self.map.Dy)
         # compute at quadrature points: (2/eta) g (phi - 3 phi^2 + phi^3)
         double_well_jacobian = (2 / self.eta) * ((self.phi_powers[0] - 3 * self.phi_powers[1] +
                                                   2 * self.phi_powers[2]) * self.g) @ self.map.K_centroid
 
         # area of water-vapour interface
-        area_water_vapour_jacobian = double_well_jacobian + perimeter_jacobian
+        area_water_vapour_jacobian = double_well_jacobian + square_grad_jacobian
 
         # if self.no_gamma:
         #     return area_water_vapour_jacobian * self.element_area
