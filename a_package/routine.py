@@ -43,7 +43,8 @@ def post_process(res: SimulationResult):
     F = np.empty((n_step, n_dimension))
     E = np.empty((n_step))
     p = np.empty((n_step))
-    V = np.empty((n_step))
+    V = np.empty((n_step))               # volume
+    P = np.empty((n_step))               # perimeter
 
     # use the model for computing extra quantities
     capi = res.modelling
@@ -67,6 +68,7 @@ def post_process(res: SimulationResult):
         E[i] = capi.energy
         p[i] = step.lam
         V[i] = capi.volume
+        P[i] = capi.perimeter
 
     # pack in an object
     evo = Evolution(t, g, phi, r, F, E, p, V)
