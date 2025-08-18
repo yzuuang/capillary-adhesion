@@ -305,33 +305,33 @@ class ComputeCapillary:
 
         return perimeter_integrand.sum() * self.element_area
 
-    def compute_force(self):
-        # update necessary power terms
-        self.phi_powers[1] = self.phi_powers[0] ** 2
-        self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
-        self.phi_powers[3] = self.phi_powers[1] ** 2
+    # def compute_force(self):
+    #     # update necessary power terms
+    #     self.phi_powers[1] = self.phi_powers[0] ** 2
+    #     self.phi_powers[2] = self.phi_powers[0] * self.phi_powers[1]
+    #     self.phi_powers[3] = self.phi_powers[1] ** 2
 
-        # the common part of 3 components
-        # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
-        square_grad = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
-        # compute at quadrature points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
-        double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
-        de_dg = (double_well + square_grad)
+    #     # the common part of 3 components
+    #     # constant within the element: eta (dphi_dx^2 + dphi_dy^2)
+    #     square_grad = self.eta * (self.dphi_dx ** 2 + self.dphi_dy ** 2)
+    #     # compute at quadrature points: (1/eta)(phi^2 - 2 phi^3 + phi^4)
+    #     double_well = (1 / self.eta) * (self.phi_powers[1] - 2 * self.phi_powers[2] + self.phi_powers[3])
+    #     de_dg = (double_well + square_grad)
 
-        # the different part of 3 components
-        f_x = (de_dg * self.dg_dx).sum()
-        f_y = (de_dg * self.dg_dy).sum()
-        # dg_dz = 1
-        f_z = de_dg.sum()
+    #     # the different part of 3 components
+    #     f_x = (de_dg * self.dg_dx).sum()
+    #     f_y = (de_dg * self.dg_dy).sum()
+    #     # dg_dz = 1
+    #     f_z = de_dg.sum()
 
-        # TODO: add contribution of water-solid interface
-        # h1_common = np.pow(self.dh1_dx**2 + self.dh1_dy**2 + 1, -1/2)
-        # water_h1_jacobian = (h1_common * self.dh1_dx) @ self.map.Dx + (h1_common * self.dh1_dy) @ self.map.Dy
-        # h2_common = np.pow(self.dh2_dx**2 + self.dh2_dy**2 + 1, -1/2)
-        # water_h2_jacobian = (h2_common * self.dh2_dx) @ self.map.Dx + (h2_common * self.dh2_dy) @ self.map.Dy
-        # area_water_solid_jacobian = self.beta * (water_h1_jacobian + water_h2_jacobian)
+    #     # TODO: add contribution of water-solid interface
+    #     # h1_common = np.pow(self.dh1_dx**2 + self.dh1_dy**2 + 1, -1/2)
+    #     # water_h1_jacobian = (h1_common * self.dh1_dx) @ self.map.Dx + (h1_common * self.dh1_dy) @ self.map.Dy
+    #     # h2_common = np.pow(self.dh2_dx**2 + self.dh2_dy**2 + 1, -1/2)
+    #     # water_h2_jacobian = (h2_common * self.dh2_dx) @ self.map.Dx + (h2_common * self.dh2_dy) @ self.map.Dy
+    #     # area_water_solid_jacobian = self.beta * (water_h1_jacobian + water_h2_jacobian)
 
-        return np.array([f_x, f_y, f_z]) * self.element_area
+    #     return np.array([f_x, f_y, f_z]) * self.element_area
 
     def compute_energy_jacobian(self) -> np.ndarray:
         # update necessary power terms

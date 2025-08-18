@@ -73,17 +73,17 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
     e_min = e_min - e_margin
     e_max = e_max + e_margin
 
-    F_n_min = np.amin(pr.evolution.F[:, -1]) / a
-    F_n_max = np.amax(pr.evolution.F[:, -1]) / a
+    F_n_min = np.amin(pr.evolution.Fz) / a
+    F_n_max = np.amax(pr.evolution.Fz) / a
     F_n_margin = view_margin_scale * (F_n_max - F_n_min)
     F_n_min = F_n_min - F_n_margin
     F_n_max = F_n_max + F_n_margin
 
-    F_t_min = np.amin(pr.evolution.F[:, 0:2]) / a
-    F_t_max = np.amax(pr.evolution.F[:, 0:2]) / a
-    F_t_margin = view_margin_scale * (F_t_max - F_t_min)
-    F_t_min = F_t_min - F_t_margin
-    F_t_max = F_t_max + F_t_margin
+    P_min = np.amin(pr.evolution.P) / a
+    P_max = np.amax(pr.evolution.P) / a
+    P_margin = view_margin_scale * (P_max - P_min)
+    P_min = P_min - P_margin
+    P_max = P_max + P_margin
 
     def update_image(i_frame: int):
         for ax in axs:
@@ -92,16 +92,15 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
         plot_gibbs_free_energy(axs[0], pr, i_frame + 1)
         axs[0].set_ylim(e_min, e_max)
         axs[0].set_ylabel(r"Energy $E/\gamma_\mathrm{lv} a^2$")
-        axs[0].set_title("Energy evolution")
+        axs[0].set_title("Evolution")
 
         plot_normal_force(axs[1], pr, i_frame + 1)
         axs[1].set_ylim(F_n_min, F_n_max)
-        axs[1].set_ylabel(r"Force $F/\gamma_\mathrm{lv} a$")
-        axs[1].set_title("Force evolution")
+        axs[1].set_ylabel(r"Normal force $F/\gamma_\mathrm{lv} a$")
 
-        plot_shear_force(axs[2], pr, i_frame + 1)
-        axs[2].set_ylim(F_t_min, F_t_max)
-        axs[2].set_ylabel(r"Force $F/\gamma_\mathrm{lv} a$")
+        plot_perimeter(axs[2], pr, i_frame + 1)
+        axs[2].set_ylim(P_min, P_max)
+        axs[2].set_ylabel(r"Perimeter $P/a$")
 
         axs[2].set_xlim([0, n_step])
         axs[2].set_xlabel(r"Step (size=$0.1 a$)")
