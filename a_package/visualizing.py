@@ -242,7 +242,7 @@ def plot_normal_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
         n_step = len(pr.evolution.t_exec)
 
     # Get the first few data points
-    f = pr.evolution.F[:n_step]
+    f = pr.evolution.Fz[:n_step-1]
 
     # Non-dimensionalize
     a = pr.modelling.region.a
@@ -250,33 +250,54 @@ def plot_normal_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
 
     # Plot the x, y, z component of forces
     steps = np.arange(n_step)
-    ax.plot(steps, f[:,2], color="b", linestyle="-", marker="o", ms=3, mfc="none", label=r"$F_z$")
+    steps = (steps[1:] + steps[:-1]) / 2
+    ax.plot(steps, f, color="b", linestyle="-", marker="o", ms=3, mfc="none", label=r"$F_z$")
 
     # Format the plot
     ax.legend(loc='upper right')
     ax.grid()
 
 
-def plot_shear_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
+def plot_perimeter(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
 
     if n_step is None:
         n_step = len(pr.evolution.t_exec)
 
     # Get the first few data points
-    f = pr.evolution.F[:n_step]
+    P = pr.evolution.P[:n_step]
 
     # Non-dimensionalize
     a = pr.modelling.region.a
-    f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
     steps = np.arange(n_step)
-    ax.plot(steps, f[:,0], color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$F_x$")
-    ax.plot(steps, f[:,1], color="g", linestyle="--", marker="^", ms=5, mfc="none", label=r"$F_y$")
+    ax.plot(steps, P/a, color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$P$")
 
     # Format the plot
     ax.legend(loc='upper right')
     ax.grid()
+
+
+# def plot_shear_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
+
+#     if n_step is None:
+#         n_step = len(pr.evolution.t_exec)
+
+#     # Get the first few data points
+#     f = pr.evolution.F[:n_step]
+
+#     # Non-dimensionalize
+#     a = pr.modelling.region.a
+#     f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+
+#     # Plot the x, y, z component of forces
+#     steps = np.arange(n_step)
+#     ax.plot(steps, f[:,0], color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$F_x$")
+#     ax.plot(steps, f[:,1], color="g", linestyle="--", marker="^", ms=5, mfc="none", label=r"$F_y$")
+
+#     # Format the plot
+#     ax.legend(loc='upper right')
+#     ax.grid()
 
 
 def plot_force_curves(ax: plt.Axes, pr: ProcessedResult, idx_stop: int=None):

@@ -39,12 +39,11 @@ def post_process(res: SimulationResult):
     t = np.empty(n_step)
     g = []
     phi = []
-    r = np.empty((n_step, n_dimension))
-    F = np.empty((n_step, n_dimension))
-    E = np.empty((n_step))
-    p = np.empty((n_step))
-    V = np.empty((n_step))               # volume
-    P = np.empty((n_step))               # perimeter
+    r = np.empty((n_step, n_dimension))  
+    E = np.empty((n_step))               
+    p = np.empty((n_step))               
+    V = np.empty((n_step))               
+    P = np.empty((n_step))               
 
     # use the model for computing extra quantities
     capi = res.modelling
@@ -63,15 +62,17 @@ def post_process(res: SimulationResult):
         phi.append(capi.phi)
 
         r[i] = capi.displacement
-        F[i] = capi.force
 
         E[i] = capi.energy
         p[i] = step.lam
         V[i] = capi.volume
         P[i] = capi.perimeter
 
+    # get normal force by numerical differences
+    Fz = (E[1:] - E[:-1]) / (r[1:, 2] - r[:-1, 2])
+
     # pack in an object
-    evo = Evolution(t, g, phi, r, F, E, p, V)
+    evo = Evolution(t, g, phi, r, E, p, V, P, Fz)
     return ProcessedResult(res.modelling, res.solving, evo)
 
 
@@ -80,11 +81,12 @@ class Evolution:
     t_exec: np.ndarray
     g: list[np.ndarray]
     phi: list[np.ndarray]
-    r: np.ndarray
-    F: np.ndarray
-    E: np.ndarray
-    p: np.ndarray
-    V: np.ndarray
+    r: np.ndarray       # relative displacement
+    E: np.ndarray       # energy
+    p: np.ndarray       # presure
+    V: np.ndarray       # volume
+    P: np.ndarray       # perimeter
+    Fz: np.ndarray      # normal force
 
 
 @dc.dataclass
