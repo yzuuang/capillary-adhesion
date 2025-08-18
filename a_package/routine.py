@@ -68,8 +68,8 @@ def post_process(res: SimulationResult):
         V[i] = capi.volume
         P[i] = capi.perimeter
 
-    # get normal force by numerical differences
-    Fz = (E[1:] - E[:-1]) / (r[1:, 2] - r[:-1, 2])
+    # get normal force by numerical differences of energy
+    Fz = -(E[1:] - E[:-1]) / (r[1:, 2] - r[:-1, 2])
 
     # pack in an object
     evo = Evolution(t, g, phi, r, E, p, V, P, Fz)
