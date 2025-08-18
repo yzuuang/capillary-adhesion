@@ -57,7 +57,7 @@ class Record:
     init_guess: np.ndarray
 
 
-eps = 1e-1  # cut off value to decide one phase
+eps = 2e-1  # cut off value to decide one phase
 
 
 def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_cutoff=eps):
@@ -165,12 +165,22 @@ def plot_contact_topography(ax: plt.Axes, data: DropletData):
     return im
 
 
-def plot_liquid_topography(ax: plt.Axes, data:DropletData):
-    liquid = np.ma.masked_where(data.phi <= 1-eps, data.phi)
-    # liquid = data.phi
+def plot_droplet_topography(ax: plt.Axes, data: DropletData):
     border = np.array([0, data.region.lx, 0, data.region.ly]) / data.region.a
-    # im = ax.imshow(liquid, cmap="Reds", vmin=0, vmax=2, alpha=0.5, extent=border)
-    im = ax.imshow(liquid, cmap=cmap_phase_field, vmin=0, vmax=1.5, alpha=0.8, interpolation='nearest', extent=border)
+    # only use a part of the colour map, as the bluest blue is too dark
+    vmin = 0
+    vmax = 1.5
+
+    liquid = np.ma.masked_where(data.phi <= 1 - eps, data.phi)
+    im = ax.imshow(
+        liquid, cmap=cmap_phase_field, vmin=vmin, vmax=vmax, alpha=0.85, interpolation="nearest", extent=border
+    )
+
+    transition = np.ma.masked_where((data.phi <= 0 + eps) | (data.phi > 1 - eps), data.phi)
+    im = ax.imshow(
+        transition, cmap=cmap_phase_field, vmin=vmin, vmax=vmax, alpha=0.7, interpolation="nearest", extent=border
+    )
+
     return im
 
 
@@ -199,7 +209,7 @@ def plot_combined_topography(ax: plt.Axes, data: DropletData):
     im1 = plot_gap_topography(ax, data)
     im2 = plot_contact_topography(ax, data)
     # im3 = plot_interface_topography(ax, data)
-    im4 = plot_liquid_topography(ax, data)
+    im4 = plot_droplet_topography(ax, data)
     # im4 = plot_phase_field_topography(ax, data)
     # return im1, im2, im4
 
