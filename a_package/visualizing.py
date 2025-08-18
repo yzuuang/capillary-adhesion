@@ -33,8 +33,10 @@ cmap_contact = "Greys"
 cmap_phase_field = "Blues"
 
 color_gas_phase = "w"
-color_liquid_phase = "C0"
 color_solid_phase = "C7"
+color_liquid_phase = "steelblue"
+color_transition_phase = "lightskyblue"
+color_vapour_phase = "aliceblue"
 
 
 @dc.dataclass
@@ -58,7 +60,7 @@ class Record:
 eps = 1e-1  # cut off value to decide one phase
 
 
-def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_water=1-eps):
+def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_cutoff=eps):
     # Get the data of the cross section at specified row index
     # FIXME: only shift in x-axis is considered.
     h1 = np.roll(data.h1[idx_row,:], int(data.r[1]/data.region.a))
@@ -83,19 +85,39 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
         for contact_part in np.split(at_contact, i_break):
             ax.fill_between(x[contact_part], h2[contact_part], h1[contact_part], color=color_solid_phase)
 
-    # highlight the water phase (if any)
-    phi = data.phi[idx_row,:]
-    water_phase = np.asarray(phi >= value_water).nonzero()[0]
+    # highlight the liquid phase (if any)
+    phi = data.phi[idx_row, :]
+    water_phase = np.asarray(phi >= 1 - value_cutoff).nonzero()[0]
     if np.size(water_phase):
         i_diff = np.diff(water_phase, prepend=water_phase[0] - 1)
         i_break = np.hstack((i_diff > 1).nonzero())
-        for water_drop in np.split(water_phase, i_break):
-            ax.fill_between(x[water_drop], h2[water_drop], h1[water_drop], color=color_liquid_phase)
+        for section in np.split(water_phase, i_break):
+            ax.fill_between(x[section], h2[section], h1[section], color=color_liquid_phase)
+
+    # highlight the vapour phase (if any)
+    phi = data.phi[idx_row, :]
+    vapour_phase = np.asarray(phi <= 0 + value_cutoff).nonzero()[0]
+    if np.size(vapour_phase):
+        i_diff = np.diff(vapour_phase, prepend=vapour_phase[0] - 1)
+        i_break = np.hstack((i_diff > 1).nonzero())
+        for section in np.split(vapour_phase, i_break):
+            ax.fill_between(x[section], h2[section], h1[section], color=color_vapour_phase)
+
+    # highlight the transition phase (if any)
+    phi = data.phi[idx_row, :]
+    transition_phase = np.asarray((phi <= 1 - value_cutoff) & (phi >= 0 + value_cutoff)).nonzero()[0]
+    if np.size(transition_phase):
+        i_diff = np.diff(transition_phase, prepend=transition_phase[0] - 1)
+        i_break = np.hstack((i_diff > 1).nonzero())
+        for section in np.split(transition_phase, i_break):
+            ax.fill_between(x[section], h2[section], h1[section], color=color_transition_phase)
 
     # Because the hightlight might not necessarily exist, we have to manually create the legend
-    [p_liquid] = ax.fill(np.nan, np.nan, color_liquid_phase, label="Liquid")
     [p_solid] = ax.fill(np.nan, np.nan, color_solid_phase, label="Solid")
-    ax.legend(handles=[p_liquid, p_solid], loc='upper center', ncol=2)
+    [p_liquid] = ax.fill(np.nan, np.nan, color_liquid_phase, label="Liquid")
+    [p_vapour] = ax.fill(np.nan, np.nan, color_vapour_phase, label="Vapour")
+    [p_interface] = ax.fill(np.nan, np.nan, color_transition_phase, label="Interface")
+    ax.legend(handles=[p_vapour, p_interface, p_liquid, p_solid], loc="upper center", ncol=2)
 
     # No view margin along x-axis.
     ax.set_xlim(x[0], x[-1])
