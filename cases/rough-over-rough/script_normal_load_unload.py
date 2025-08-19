@@ -62,9 +62,8 @@ def main():
 
     # the capillary model object
     eta = config["Capillary"].getfloat("interface_thickness")
-    theta = config["Capillary"].getfloat("contact_angle_degree")
-    gamma = -np.cos(theta / 180.0 * np.pi)
-    capi = CapillaryBridge(region, eta, gamma, h1, h2)
+    theta = (np.pi / 180) * config["Capillary"].getfloat("contact_angle_degree")
+    capi = CapillaryBridge(region, eta, theta, h1, h2)
 
     capi.update_gap()
 
