@@ -97,28 +97,23 @@ class ProcessedResult:
 
 
 def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
-                                    V: float, d_min: float, d_max: float, d_step: float):
+                                    volume: float, trajectory: list[float], round_trip: bool=True):
     # save the configurations
     store.save("modelling", capi)
     store.save("solving", solver)
     sim = SimulationResult("modelling.json", "solving.json", [])
 
-    # generate all `d` (mean distances) values
-    # FIXME: specify nb_steps may be a better choice
-    num_d = math.ceil((d_max - d_min) / d_step) + 1
-    d_approaching = d_max - d_step * np.arange(num_d)
-    d_departing = np.flip(d_approaching)
-    all_d = np.concatenate((d_approaching, d_departing[1:]))
-
+    trajectory = np.array(trajectory)
+    if round_trip:
+        trajectory = np.concatenate((trajectory, np.flip(trajectory)[1:]))
     # Truncate to remove floating point errors
-    # NOTE: assume 'd_step' < 0
-    n_decimals = 6
-    all_d = np.round(all_d, n_decimals)
+    nb_decimals = 6
+    trajectory = np.round(trajectory, nb_decimals)
 
     # inform
     logger.info(
         f"Problem size: {capi.region.nx}x{capi.region.ny}. "
-        f"Simulating for all {len(all_d)} mean distance values in...\n{all_d}"
+        f"Simulating for all {len(trajectory)} mean distance values in...\n{trajectory}"
     )
     report = {
         'not_converged': [],
@@ -129,7 +124,7 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
     # simulate
     x = capi.phi.ravel()
     lam = 0.0
-    for index, d in enumerate(all_d):
+    for index, d in enumerate(trajectory):
         # update the parameter
         logger.info(f"Parameter of interest: mean distance={d}")
         capi.z1 = d

@@ -1,22 +1,8 @@
-import os
 import sys
-import configparser
 import logging
 
 
-def read_configs(files: list):
-    if not len(files):
-        raise RuntimeError(f"Provide at least one config file.")
-    config = configparser.ConfigParser()
-    for file in files:
-        if not os.path.exists(file):
-            raise RuntimeError(f"Non-existing file {file}")
-        print(f"Reading config from {file}")
-        config.read(file)
-    return config
-
-
-def init_logging():
+def reset_logging():
     """
     Config the logger such that logging.info(...) works like print(...)
     """
@@ -33,3 +19,18 @@ def init_logging():
 
     # set logging level
     root_logger.setLevel(logging.INFO)
+
+
+def switch_log_file(log_file):
+    root_logger = logging.getLogger()
+
+    # remove all existing file handler
+    for h in list(root_logger.handlers):
+        if isinstance(h, logging.FileHandler):
+            root_logger.removeHandler(h)
+            h.close()
+
+    # add its own file hander
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter("%(name)s %(levelname)s %(message)s"))
+    root_logger.addHandler(file_handler)
