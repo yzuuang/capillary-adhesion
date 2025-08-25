@@ -1,7 +1,6 @@
 import os
 import time
 import hashlib
-import logging
 import shutil
 import json
 from pathlib import Path
@@ -41,7 +40,6 @@ def register_run(base_dir_path, script_path, *params_paths, runtime_root=None):
     run_dir_path = os.path.join(runtime_root, base_dir_path, run_id)
     run_dir = RunDir(run_dir_path)
     run_dir.setup_directory()
-    run_dir.switch_log_file()
 
     # put in initial values
     for each_params in params_paths:
@@ -91,20 +89,6 @@ class RunDir:
         self.log_file.touch()
         with open(self.metadata_file, 'w', encoding='utf-8') as fp:
             json.dump({}, fp)
-
-    def switch_log_file(self):
-        root_logger = logging.getLogger()
-
-        # remove all existing file handler
-        for h in list(root_logger.handlers):
-            if isinstance(h, logging.FileHandler):
-                root_logger.removeHandler(h)
-                h.close()
-
-        # add its own file hander
-        file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
-        file_handler.setFormatter(logging.Formatter("%(name)s %(levelname)s %(message)s"))
-        root_logger.addHandler(file_handler)
 
     @property
     def intermediate_dir(self):
