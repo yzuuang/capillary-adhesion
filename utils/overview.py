@@ -7,7 +7,7 @@ from a_package.visualizing import *
 
 import matplotlib.pyplot as plt
 
-from utils.runtime import retrieve_run
+from utils.runtime import RunDir
 
 
 def main():
@@ -15,9 +15,9 @@ def main():
     plt.show()
 
 
-def create_overview_animation(sim_case, run_id):
+def create_overview_animation(run_path):
+    run_dir = RunDir(run_path)
     # retrieve processed result
-    run_dir = retrieve_run(sim_case, run_id)
     with working_directory(run_dir.results_dir, read_only=True) as store:
         pr = store.load("result", ProcessedResult)
     # create anime

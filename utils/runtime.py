@@ -1,16 +1,16 @@
 import os
 import time
-import hashlib
+import subprocess
 import shutil
 import json
 from pathlib import Path
 
 
-repo_root = os.getenv('PYTHONPATH', os.getcwd())
+repo_root = os.getenv("PYTHONPATH", os.getcwd())
 runtime_dirname = "runtime"
 
 
-def register_run(base_dir_path, script_path, *params_paths, runtime_root=None):
+def register_run(base_dir_path, script_path, *param_paths, runtime_root=None, with_hash: bool = True):
     """
     Each simulation run gets a dedicated folder to work with.
     ---
@@ -24,17 +24,14 @@ def register_run(base_dir_path, script_path, *params_paths, runtime_root=None):
     # get current time
     current_time = time.localtime()
 
-    # compute a hash based on content of script and parameters
-    with open(script_path, 'rb') as fp:
-        content = fp.read()
-    for each_params in params_paths:
-        with open(each_params, 'rb') as fp:
-            content += fp.read()
-    run_hash = hashlib.sha1(content).hexdigest()
+    # use the timestamp as id
+    run_id = time.strftime("%y%m%d-%H%M%S", current_time)
 
-    # combine into a unique ID
-    timestamp = time.strftime("%y%m%d-%H%M%S", current_time)
-    run_id = f"{timestamp}-{run_hash[:6]}"
+    # get the git hash
+    if with_hash:
+        git_hash = get_git_hash()
+        if len(git_hash):
+            run_id += f"-{git_hash[:6]}"
 
     # create a dedicated folder for this simulation run
     run_dir_path = os.path.join(runtime_root, base_dir_path, run_id)
@@ -42,16 +39,20 @@ def register_run(base_dir_path, script_path, *params_paths, runtime_root=None):
     run_dir.setup_directory()
 
     # put in initial values
-    for each_params in params_paths:
-        run_dir.add_params_file(each_params)
+    if len(param_paths):
+        for each_path in param_paths:
+            run_dir.add_parameter_file(each_path)
 
     # collect metadata
     metadata = {
         "run_id": run_id,
         "time": time.strftime("%Y-%m-%dT%H:%M:%S", current_time),
         "script": str(os.path.abspath(script_path)),
-        "parameters": [str(os.path.abspath(each_params)) for each_params in params_paths],
     }
+    if len(param_paths):
+        metadata.update({"parameters": [str(os.path.abspath(each_params)) for each_params in param_paths]})
+    if with_hash and len(git_hash):
+        metadata.update({"git_hash": git_hash})
     run_dir.update_metadata(metadata)
 
     return run_dir
@@ -87,7 +88,7 @@ class RunDir:
         self.results_dir.mkdir()
         self.visuals_dir.mkdir()
         self.log_file.touch()
-        with open(self.metadata_file, 'w', encoding='utf-8') as fp:
+        with open(self.metadata_file, "w", encoding="utf-8") as fp:
             json.dump({}, fp)
 
     @property
@@ -114,12 +115,21 @@ class RunDir:
     def metadata_file(self):
         return self.path / "METADATA.json"
 
-    def add_params_file(self, file_path):
+    def add_parameter_file(self, file_path):
         shutil.copy2(file_path, self.parameters_dir)
 
     def update_metadata(self, new_info):
-        with open(self.metadata_file, 'r', encoding='utf-8') as fp:
+        with open(self.metadata_file, "r", encoding="utf-8") as fp:
             metadata = json.load(fp)
         metadata.update(new_info)
-        with open(self.metadata_file, 'w', encoding='utf-8') as fp:
+        with open(self.metadata_file, "w", encoding="utf-8") as fp:
             json.dump(metadata, fp, indent=2, sort_keys=True)
+
+
+def get_git_hash():
+    try:
+        hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
+        return hash
+    except Exception as e:
+        print(f"Error getting git hash: {e}")
+        return None
