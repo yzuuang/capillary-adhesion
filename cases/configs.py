@@ -1,6 +1,6 @@
 import os
 import sys
-import configparser
+from configparser import ConfigParser
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,7 +11,7 @@ from a_package.modelling import Region, SelfAffineRoughness, wavevector_norm, PS
 def read_config_files(files: list):
     if not len(files):
         raise RuntimeError(f"Provide at least one config file.")
-    config = configparser.ConfigParser()
+    config = ConfigParser()
     for file in files:
         if not os.path.exists(file):
             raise RuntimeError(f"The file {file} doesn't exist.")
@@ -20,10 +20,20 @@ def read_config_files(files: list):
     return config
 
 
-def preview_surface_and_gap(config: dict[str, dict[str, str]]):
-    region = get_region_specs(config["Grid"])
-    h1 = match_shape_and_get_height(region, config["UpperSurface"])
-    h0 = match_shape_and_get_height(region, config["LowerSurface"])
+def save_config_to_file(config: ConfigParser, filepath):
+    with open(filepath, "w", encoding="utf-8") as fp:
+        config.write(fp)
+
+
+def preview_surface_and_gap(
+    grid_params: dict[str, str],
+    upper_surface_params: dict[str, str],
+    lower_surface_params: dict[str, str],
+    trajectory_params: dict[str, str],
+):
+    region = get_region_specs(grid_params)
+    h1 = match_shape_and_get_height(region, upper_surface_params)
+    h0 = match_shape_and_get_height(region, lower_surface_params)
 
     border = [0, region.nx, 0, region.ny]
 
@@ -34,7 +44,7 @@ def preview_surface_and_gap(config: dict[str, dict[str, str]]):
 
     fig, ax = plt.subplots()
     # gap at the minimal separation
-    d_min = float(config["Trajectory"]["min_separation"])
+    d_min = float(trajectory_params["min_separation"])
     g = h1 - h0 + d_min
     # image = ax.pcolormesh(region.xm/a, region.ym/a, gap/a, cmap='hot')
     image = ax.imshow(g / region.a, vmin=0, interpolation="bicubic", cmap="hot", extent=border)
