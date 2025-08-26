@@ -14,13 +14,7 @@ from utils.logging import reset_logging, switch_log_file
 from utils.runtime import register_run
 from utils.overview import create_overview_animation
 
-from cases.configs import (
-    read_config_files,
-    save_config_to_file,
-    get_region_specs,
-    match_shape_and_get_height,
-    preview_surface_and_gap,
-)
+from cases.configs import *
 
 
 show_me = False
@@ -43,29 +37,24 @@ def main():
         preview_surface_and_gap(config["Grid"], config["UpperSurface"], config["LowerSurface"], config["Trajectory"])
 
     # check if parameter sweep is specified in config
-    sweep_section = "ParameterSweep"
-    if config.has_section(sweep_section):
-        section = config[sweep_section]["section"]
-        key = config[sweep_section]["option"]
-        values = np.linspace(
-            float(config[sweep_section]["min_value"]),
-            float(config[sweep_section]["max_value"]),
-            int(config[sweep_section]["nb_steps"]),
-        )
-        config.remove_section(sweep_section)
-        for index, value in enumerate(values):
-            logger.info(f"Subrun {index}/{len(values)},{key}={value}")
-            config[section][key] = str(value)
-            sub_run = register_run(run.intermediate_dir, __file__, with_hash=False)
-            save_config_to_file(config, sub_run.parameters_dir / f"subrun-{index}.ini")
-            run_one_trip(sub_run, config)
-    else:
+    sweep_section_prefix = "ParameterSweep"
+    sweeps = extract_sweeps(config, sweep_section_prefix)
+    if not len(sweeps):
+        switch_log_file(run.log_file)
         run_one_trip(run, config)
         create_overview_animation(run.path)
+    else:
+        nb_subruns = len(sweeps)
+        for index, config in enumerate(sweeps.iter_config(config)):
+            sub_run = register_run(run.intermediate_dir, __file__, with_hash=False)
+            switch_log_file(sub_run.log_file)
+            logger.info(f"Subrun {index}/{nb_subruns}")
+            save_config_to_file(config, sub_run.parameters_dir / f"subrun-{index}.ini")
+            run_one_trip(sub_run, config)
+            create_overview_animation(sub_run.path)
 
 
 def run_one_trip(run, config: dict[str, dict[str, str]]):
-    switch_log_file(run.log_file)
 
     # grid
     region = get_region_specs(config["Grid"])

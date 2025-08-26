@@ -1,5 +1,9 @@
 import os
 import sys
+import re
+import functools
+import itertools
+import operator
 from configparser import ConfigParser
 
 import numpy as np
@@ -55,6 +59,46 @@ def preview_surface_and_gap(
     skip = input("Run simulation [Y/n]? ").lower() in ("n", "no")
     if skip:
         sys.exit(0)
+
+
+def extract_sweeps(config: dict[str, dict[str, str]], prefix):
+    # allow section name followed by digits in case of more than one parameters to sweep
+    pattern = re.compile(f"{prefix}(\d+)?")
+    # find all the sweep sections in the config
+    sweep_sections = [section for section in config.keys() if pattern.match(section)]
+    # construct a mapping from the pair of names to access the parameter into an array of all values to sweep
+    sweep_specs = {
+        (config[section]["in_section"], config[section]["in_option"]): np.linspace(
+            float(config[section]["min_value"]), float(config[section]["max_value"]), int(config[section]["nb_steps"])
+        )
+        for section in sweep_sections
+    }
+    # remove sweep sections in the config
+    for section in sweep_sections:
+        del config[section]
+
+    return Sweeps(sweep_specs)
+
+
+class Sweeps:
+
+    def __init__(self, sweep_specs: dict[tuple[str, str], np.ndarray]):
+        self._specs = sweep_specs
+
+    def __len__(self):
+        return functools.reduce(operator.mul, (len(vals) for vals in self._specs.values()), 1)
+
+    def iter_config(self, config: dict[str, dict[str, str]]):
+        for updates in self._iter_combos():
+            for [key_pair, value] in updates:
+                config[key_pair[0]][key_pair[1]] = str(value)
+            yield config
+
+    def _iter_combos(self):
+        keys = list(self._specs.keys())
+        values_combos = itertools.product(*(self._specs.values()))
+        for values_combo in values_combos:
+            yield zip(keys, values_combo)
 
 
 def get_region_specs(grid_params: dict[str, str]):
@@ -126,27 +170,29 @@ def _get_height_of_rough_surface(region, surface_params: dict[str, str]):
 def _get_height_of_pattern(region, surface_params: dict[str, str]):
     xm = region.xm
     ym = region.ym
+    x0 = float(surface_params["tip_center_x"])
+    y0 = float(surface_params["tip_center_y"])
 
     try:
-        wave_len_L = float(surface_params['wave_len_L'])
-        wave_amp_L = float(surface_params['wave_amp_L'])
-        wave_L = wave_amp_L * np.cos(2*np.pi / wave_len_L * xm) * np.cos(2*np.pi / wave_len_L * ym)
+        wave_len_L = float(surface_params["wave_len_L"])
+        wave_amp_L = float(surface_params["wave_amp_L"])
+        wave_L = wave_amp_L * np.cos(2 * np.pi / wave_len_L * (xm - x0)) * np.cos(2 * np.pi / wave_len_L * (ym - y0))
     except KeyError:
-        wave_L = 0.
+        wave_L = 0.0
 
     try:
-        wave_len_M = float(surface_params['wave_len_M'])
-        wave_amp_M = float(surface_params['wave_amp_M'])
-        wave_M = wave_amp_M * np.cos(2*np.pi / wave_len_M * xm) * np.cos(2*np.pi / wave_len_M * ym)
+        wave_len_M = float(surface_params["wave_len_M"])
+        wave_amp_M = float(surface_params["wave_amp_M"])
+        wave_M = wave_amp_M * np.cos(2 * np.pi / wave_len_M * (xm - x0)) * np.cos(2 * np.pi / wave_len_M * (ym - y0))
     except KeyError:
-        wave_M = 0.
+        wave_M = 0.0
 
     try:
-        wave_len_S = float(surface_params['wave_len_S'])
-        wave_amp_S = float(surface_params['wave_amp_S'])
-        wave_S = wave_amp_S * np.cos(2*np.pi / wave_len_S * xm) * np.cos(2*np.pi / wave_len_S * ym)
+        wave_len_S = float(surface_params["wave_len_S"])
+        wave_amp_S = float(surface_params["wave_amp_S"])
+        wave_S = wave_amp_S * np.cos(2 * np.pi / wave_len_S * (xm - x0)) * np.cos(2 * np.pi / wave_len_S * (ym - y0))
     except KeyError:
-        wave_L = 0.
+        wave_L = 0.0
 
     height = wave_L + wave_M + wave_S
     return np.atleast_2d(height)
