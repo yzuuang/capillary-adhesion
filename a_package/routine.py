@@ -83,7 +83,8 @@ class Evolution:
     phi: list[np.ndarray]
     r: np.ndarray       # relative displacement
     E: np.ndarray       # energy
-    p: np.ndarray       # presure
+    # Hack: skip this "troublemaking" value
+    # p: np.ndarray       # presure
     V: np.ndarray       # volume
     P: np.ndarray       # perimeter
     Fz: np.ndarray      # normal force
