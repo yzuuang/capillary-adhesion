@@ -65,12 +65,17 @@ def extract_sweeps(config: dict[str, dict[str, str]], prefix):
     # allow section name followed by digits in case of more than one parameters to sweep
     pattern = re.compile(f"{prefix}(\d+)?")
     # find all the sweep sections in the config
-    sweep_sections = [section for section in config.keys() if pattern.match(section)]
+    sweep_sections = [section for section in config.keys() if pattern.fullmatch(section)]
+    # mapping literals to the method for constructing the parameter values
+    method_mapping = {
+        "linspace": np.linspace,
+        "logspace": np.logspace,
+    }
     # construct a mapping from the pair of names to access the parameter into an array of all values to sweep
     sweep_specs = {
-        (config[section]["in_section"], config[section]["in_option"]): np.linspace(
-            float(config[section]["min_value"]), float(config[section]["max_value"]), int(config[section]["nb_steps"])
-        )
+        (config[section]["in_section"], config[section]["in_option"]): method_mapping[
+            config[section].get("method", "linspace")
+        ](float(config[section]["min_value"]), float(config[section]["max_value"]), int(config[section]["nb_steps"]))
         for section in sweep_sections
     }
     # remove sweep sections in the config
