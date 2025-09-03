@@ -120,7 +120,9 @@ def _load_here(label: str):
     for key, value in data.items():
         # recover array from CSV
         if isinstance(value, str) and value.endswith(".csv"):
-            data[key] = np.loadtxt(value, delimiter=_CSV_separator)
+            # Hack: skip this "troublemaking" value
+            if not value.endswith("p.csv"):
+                data[key] = np.loadtxt(value, delimiter=_CSV_separator)
         # recover nested dict from nested JSON (recursive)
         elif isinstance(value, str) and value.endswith(".json"):
             data[key] = _load_here(value[:-5])
@@ -150,4 +152,7 @@ def _recover_dataclass(data: dict, DataType):
                 value = data[field.name]
                 data[field.name] = [_recover_dataclass(element, SubDataType) for element in value]
 
+    # Hack: skip this "troublemaking" value
+    if "p" in data.keys():
+        del data["p"]
     return DataType(**data)
