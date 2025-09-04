@@ -133,7 +133,7 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
         capi.update_phase_field()
 
         # solve the problem
-        numopt = capi.formulate_with_constant_volume(V)
+        numopt = capi.formulate_with_constant_volume(volume)
         [x, lam, t_exec, *flags] = solver.solve_minimisation(numopt, x, lam, 0, 1)
         if not flags[0]:
             report["not_converged"].append(index)
