@@ -178,7 +178,7 @@ class AugmentedLagrangian:
             # else if it stops due to some "abnomral" reason
             elif info["warnflag"] == 2:
                 had_abnormal_stop = True
-                continue
+                break
             # else, it achieves convergence
             constr_violation_plus = numopt.g(x_plus)
             # update Lagrangian multiplier following the formula
