@@ -12,9 +12,9 @@ from a_package.routine import simulate_quasi_static_pull_push, post_process
 
 from utils.logging import reset_logging, switch_log_file
 from utils.runtime import register_run
-from utils.overview import create_overview_animation
 
 from cases.configs import *
+from cases.visualise_onerun import create_overview_animation
 
 
 show_me = False
