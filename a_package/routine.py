@@ -4,12 +4,13 @@ Simulation routines: modelling, solving and post-processing.
 
 import dataclasses as dc
 import logging
-import math
 
 import numpy as np
 
 from a_package.modelling import CapillaryBridge
-from a_package.solving import AugmentedLagrangian
+from a_package.computing import Grid
+from a_package.minimising import AugmentedLagrangian
+from a_package.formulating import Formulation
 from a_package.storing import FilesToReadWrite
 
 
@@ -99,12 +100,27 @@ class ProcessedResult:
     evolution: Evolution
 
 
-def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
-                                    volume: float, trajectory: list[float], round_trip: bool=True):
+logger = logging.getLogger(__name__)
+
+
+def simulate_quasi_static_pull_push(
+    store: FilesToReadWrite,
+    grid: Grid,
+    upper: np.ndarray,
+    lower: np.ndarray,
+    capillary: CapillaryBridge,
+    phase: np.ndarray,
+    volume: float,
+    minimiser: AugmentedLagrangian,
+    trajectory: list[float],
+    round_trip: bool = True,
+):
     # save the configurations
-    store.save("modelling", capi)
-    store.save("solving", solver)
+    store.save("modelling", capillary)
+    store.save("solving", minimiser)
     sim = SimulationResult("modelling.json", "solving.json", [])
+
+    formulation = Formulation(grid, upper, lower, capillary)
 
     trajectory = np.array(trajectory)
     if round_trip:
@@ -115,28 +131,27 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
 
     # inform
     logger.info(
-        f"Problem size: {capi.region.nx}x{capi.region.ny}. "
+        f"Problem size: {grid.nx}x{grid.ny}. "
         f"Simulating for all {len(trajectory)} mean distance values in...\n{trajectory}"
     )
     report = {
-        'not_converged': [],
-        'iter_limit': [],
-        'abnormal_stop': [],
+        "not_converged": [],
+        "iter_limit": [],
+        "abnormal_stop": [],
     }
 
     # simulate
-    x = capi.phi.ravel()
+    x = np.ravel(phase)
     lam = 0.0
-    for index, d in enumerate(trajectory):
+    for index, delta in enumerate(trajectory):
         # update the parameter
-        logger.info(f"Parameter of interest: mean distance={d}")
-        capi.z1 = d
-        capi.update_gap()
-        capi.update_phase_field()
+        logger.info(f"Parameter of interest: mean distance={delta}")
+        formulation.update_gap(delta)
+        formulation.update_phase_field(x)
 
         # solve the problem
-        numopt = capi.formulate_with_constant_volume(volume)
-        [x, lam, t_exec, *flags] = solver.solve_minimisation(numopt, x, lam, 0, 1)
+        numopt = formulation.formulate_with_constant_volume(volume)
+        [x, lam, t_exec, *flags] = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
         if not flags[0]:
             report["not_converged"].append(index)
         if flags[1]:
@@ -145,14 +160,13 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
             report["abnormal_stop"].append(index)
 
         # save the results
-        capi.phi = x.reshape(capi.region.nx, capi.region.ny)
-        # capi.phi = capi.squashing(x.reshape(capi.region.nx, capi.region.ny))
-        data = SimulationStep([0,0], d, t_exec, capi.phi, lam)
-        store.save(f"steps---{index}", data)
-        sim.steps.append(f"steps---{index}.json")
+        formulation.phase = x.reshape(grid.nx, grid.ny)
+        # data = SimulationStep([0, 0], delta, t_exec, formulation.phase, lam)
+        # store.save(f"steps---{index}", data)
+        # sim.steps.append(f"steps---{index}.json")
 
         # Check the bounds on phase field
-        capi.validate_phase_field()
+        formulation.validate_phase_field()
 
     # report
     if all(not len(v) for v in report.values()):
@@ -168,36 +182,47 @@ def simulate_quasi_static_pull_push(store: FilesToReadWrite, capi: CapillaryBrid
     return sim
 
 
-def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, solver: AugmentedLagrangian,
-                                V: float, slide_by_indices: list[tuple[int, int]]):
+def simulate_quasi_static_slide(
+    store: FilesToReadWrite,
+    grid: Grid,
+    upper: np.ndarray,
+    lower: np.ndarray,
+    capillary: CapillaryBridge,
+    phase: np.ndarray,
+    volume: float,
+    minimiser: AugmentedLagrangian,
+    slide_by_indices: list[tuple[int, int]],
+):
     # save the configurations
-    store.save("modelling", capi)
-    store.save("solving", solver)
+    store.save("modelling", capillary)
+    store.save("solving", minimiser)
     sim = SimulationResult("modelling.json", "solving.json", [])
+
+    formulation = Formulation(grid, upper, lower, capillary)
 
     # inform
     logger.info(
-        f"Problem size: {capi.region.nx}x{capi.region.ny}. "
+        f"Problem size: {grid.nx}x{grid.ny}. "
         f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}"
     )
     report = {
-        'not_converged': [],
-        'iter_limit': [],
-        'abnormal_stop': [],
+        "not_converged": [],
+        "iter_limit": [],
+        "abnormal_stop": [],
     }
 
     # simulate
-    x = capi.phi.ravel()
+    x = np.ravel(phase)
     lam = 0.0
-    for index, m in enumerate(slide_by_indices):
+    for index, coords in enumerate(slide_by_indices):
         # update the parameter
-        logger.info(f"Parameter of interest: slide by indices={m}")
-        capi.ix1_iy1 = m
-        capi.update_gap()
+        logger.info(f"Parameter of interest: displacement={coords}")
+        # FIXME: sliding
+        formulation.update_phase_field(x)
 
         # solve the problem
-        numopt = capi.formulate_with_constant_volume(V)
-        [x, lam, t_exec, *flags] = solver.solve_minimisation(numopt, x, lam, 0, 1)
+        numopt = formulation.formulate_with_constant_volume(volume)
+        [x, lam, t_exec, *flags] = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
         if not flags[0]:
             report["not_converged"].append(index)
         if flags[1]:
@@ -205,14 +230,14 @@ def simulate_quasi_static_slide(store: FilesToReadWrite, capi: CapillaryBridge, 
         if flags[2]:
             report["abnormal_stop"].append(index)
 
-        # save the result
-        capi.phi = x.reshape(capi.region.nx, capi.region.ny)
-        data = SimulationStep(m, capi.z1, t_exec, capi.phi, lam)
-        store.save(f"steps---{index}", data)
-        sim.steps.append(f"steps---{index}.json")
+        # save the results
+        formulation.phase = x.reshape(grid.nx, grid.ny)
+        # data = SimulationStep([0, 0], delta, t_exec, formulation.phase, lam)
+        # store.save(f"steps---{index}", data)
+        # sim.steps.append(f"steps---{index}.json")
 
         # Check the bounds on phase field
-        capi.validate_phase_field()
+        formulation.validate_phase_field()
 
     # report
     if all(not len(v) for v in report.values()):
