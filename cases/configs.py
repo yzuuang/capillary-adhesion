@@ -16,8 +16,9 @@ import numpy as np
 import numpy.random as random
 import matplotlib.pyplot as plt
 
-from a_package.modelling import Region, SelfAffineRoughness, wavevector_norm, PSD_to_height, CapillaryBridge
-from a_package.solving import AugmentedLagrangian
+from a_package.modelling import SelfAffineRoughness, psd_to_height, CapillaryBridge
+from a_package.computing import Grid
+from a_package.minimising import AugmentedLagrangian
 
 
 def read_config_files(files: list):
@@ -43,23 +44,23 @@ def preview_surface_and_gap(
     lower_surface_params: dict[str, str],
     trajectory_params: dict[str, str],
 ):
-    region = get_region_specs(grid_params)
-    h1 = match_shape_and_get_height(region, upper_surface_params)
-    h0 = match_shape_and_get_height(region, lower_surface_params)
+    grid = get_region_specs(grid_params)
+    h1 = match_shape_and_get_height(grid, upper_surface_params)
+    h0 = match_shape_and_get_height(grid, lower_surface_params)
 
-    border = [0, region.nx, 0, region.ny]
+    border = [0, grid.nx, 0, grid.ny]
 
     fig, ax = plt.subplots()
-    # image = ax.pcolormesh(region.xm/a, region.ym/a, h1/a, cmap='hot')
-    image = ax.imshow(h1 / region.a, interpolation="bicubic", cmap="plasma", extent=border)
+    # image = ax.pcolormesh(grid.xm/a, grid.ym/a, h1/a, cmap='hot')
+    image = ax.imshow(h1 / grid.a, interpolation="bicubic", cmap="plasma", extent=border)
     fig.colorbar(image)
 
     fig, ax = plt.subplots()
     # gap at the minimal separation
     d_min = float(trajectory_params["min_separation"])
     g = h1 - h0 + d_min
-    # image = ax.pcolormesh(region.xm/a, region.ym/a, gap/a, cmap='hot')
-    image = ax.imshow(g / region.a, vmin=0, interpolation="bicubic", cmap="hot", extent=border)
+    # image = ax.pcolormesh(grid.xm/a, grid.ym/a, gap/a, cmap='hot')
+    image = ax.imshow(g / grid.a, vmin=0, interpolation="bicubic", cmap="hot", extent=border)
     fig.colorbar(image)
 
     # Visual check before running
@@ -125,11 +126,11 @@ def get_region_specs(grid_params: dict[str, str]):
     a = float(grid_params["pixel_size"])
     N = int(grid_params["nb_pixels"])
     L = a * N
-    region = Region(a, L, L, N, N)
-    return region
+    grid = Grid(a, L, L, N, N)
+    return grid
 
 
-def match_shape_and_get_height(region, surface_params: dict[str, str]):
+def match_shape_and_get_height(grid, surface_params: dict[str, str]):
     shape_mapping = {
         "flat": _get_height_of_flat,
         "tip": _get_height_of_tip,
@@ -140,46 +141,50 @@ def match_shape_and_get_height(region, surface_params: dict[str, str]):
     surface_shape = surface_params["shape"]
     if surface_shape not in shape_mapping:
         raise ValueError(f"Unknown surface shape {surface_shape}.")
-    return shape_mapping[surface_shape](region, surface_params)
+    return shape_mapping[surface_shape](grid, surface_params)
 
 
-def _get_height_of_flat(region, surface_params: dict[str, str]):
+# FIXME: now the model want the first dimension to always be number of components.
+# Though for now, thanks to numpy, the shape will be casted to match that of phase-field.
+
+
+def _get_height_of_flat(grid, surface_params: dict[str, str]):
     constant = float(surface_params["constant"])
-    height = constant * np.ones([region.nx, region.ny])
+    height = constant * np.ones([grid.nx, grid.ny])
     return height
 
 
-def _get_height_of_tip(region, surface_params: dict[str, str]):
+def _get_height_of_tip(grid, surface_params: dict[str, str]):
     R = float(surface_params["radius"])
-    height = -np.sqrt(np.clip(R**2 - (region.xm - 0.5 * region.lx) ** 2 - (region.ym - 0.5 * region.ly) ** 2, 0, None))
+    height = -np.sqrt(np.clip(R**2 - (grid.xm - 0.5 * grid.lx) ** 2 - (grid.ym - 0.5 * grid.ly) ** 2, 0, None))
     # set lowest point to zero
     height += np.amax(abs(height))
     return height
 
 
-def _get_height_of_sinusoid(region, surface_params: dict[str, str]):
+def _get_height_of_sinusoid(grid, surface_params: dict[str, str]):
     wave_num = float(surface_params["wavenumber"])
     wave_amp = float(surface_params["amplitude"])
-    xm = region.xm
-    qx = (2 * np.pi / region.lx) * wave_num
-    ym = region.ym
-    qy = (2 * np.pi / region.ly) * wave_num
+    xm = grid.xm
+    qx = (2 * np.pi / grid.lx) * wave_num
+    ym = grid.ym
+    qy = (2 * np.pi / grid.ly) * wave_num
     height = wave_amp * np.cos(qx * xm) * np.cos(qy * ym)
     return height
 
 
-def _get_height_of_rough_surface(region, surface_params: dict[str, str]):
-    assert region.lx == region.ly
+def _get_height_of_rough_surface(grid, surface_params: dict[str, str]):
+    assert grid.lx == grid.ly
     # generate roughness PSD
     C0 = float(surface_params["prefactor"])
     nR = float(surface_params["rolloff_wavelength_pixels"])
-    qR = (2 * np.pi) / (region.a * nR)  # roll-off wave vector
+    qR = (2 * np.pi) / (grid.a * nR)  # roll-off wave vector
     nS = float(surface_params["cutoff_wavelength_pixels"])
-    qS = (2 * np.pi) / (region.a * nS)  # cut-off
+    qS = (2 * np.pi) / (grid.a * nS)  # cut-off
     H = float(surface_params["hurst_exponent"])
     roughness = SelfAffineRoughness(C0, qR, qS, H)
-    q_2D = wavevector_norm(region.qx, region.qy)
-    C_2D = roughness.mapto_psd(q_2D)
+    q_2D = np.meshgrid(grid.qx, grid.qy)
+    [_, C_2D] = roughness.mapto_isotropic_psd(q_2D)
     # get or generate the seed
     try:
         seed = int(surface_params["seed"])
@@ -191,13 +196,13 @@ def _get_height_of_rough_surface(region, surface_params: dict[str, str]):
         print(f"seed={seq.entropy}")
     # generate rough surface from PSD
     rng = random.default_rng(seq)
-    height = PSD_to_height(C_2D, rng=rng)
-    return height
+    height = psd_to_height(C_2D, rng=rng)
+    return height.squeeze(axis=0)
 
 
-def _get_height_of_pattern(region, surface_params: dict[str, str]):
-    xm = region.xm
-    ym = region.ym
+def _get_height_of_pattern(grid, surface_params: dict[str, str]):
+    xm = grid.xm
+    ym = grid.ym
     x0 = float(surface_params["tip_center_x"])
     y0 = float(surface_params["tip_center_y"])
 
@@ -226,10 +231,10 @@ def _get_height_of_pattern(region, surface_params: dict[str, str]):
     return np.atleast_2d(height)
 
 
-def get_capillary(region: Region, capillary_params: dict[str, str], upper, lower):
+def get_capillary(capillary_params: dict[str, str]):
     theta = (np.pi / 180) * float(capillary_params["contact_angle_degree"])
     eta = float(capillary_params["interface_thickness"])
-    return CapillaryBridge(region, eta, theta, upper, lower)
+    return CapillaryBridge(eta, theta, None)
 
 
 def get_optimizer(optimzer_params: dict[str, str]):

@@ -8,7 +8,8 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.modelling import Region, CapillaryBridge
+from a_package.modelling import CapillaryBridge
+from a_package.computing import Grid
 
 
 show_me_plot = False
@@ -18,7 +19,7 @@ def test_capillary_bridge_compute_energy_jacobian():
     a = 1.0
     L = 10.0
     N = 10
-    region = Region(a, L, L, N, N)
+    region = Grid(a, L, L, N, N)
 
     eta = L / N
     gamma = 0.2
