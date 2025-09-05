@@ -48,7 +48,7 @@ def main():
         for index, config in enumerate(sweeps.iter_config(config)):
             sub_run = register_run(run.intermediate_dir, __file__, with_hash=False)
             switch_log_file(sub_run.log_file)
-            logger.info(f"Subrun {index}/{nb_subruns}")
+            logger.info(f"Run #{index} of {nb_subruns} runs.")
             save_config_to_file(config, sub_run.parameters_dir / f"subrun-{index}.ini")
             run_one_trip(sub_run, config)
             create_overview_animation(sub_run.path)

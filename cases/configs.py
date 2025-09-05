@@ -91,7 +91,11 @@ class Sweeps:
         self._specs = sweep_specs
 
     def __len__(self):
-        return functools.reduce(operator.mul, (len(vals) for vals in self._specs.values()), 1)
+        return (
+            0
+            if not len(self._specs.keys())
+            else functools.reduce(operator.mul, (len(vals) for vals in self._specs.values()), 1)
+        )
 
     def iter_config(self, config: dict[str, dict[str, str]]):
         for updates in self._iter_combos():
