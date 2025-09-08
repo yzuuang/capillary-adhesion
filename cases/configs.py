@@ -66,6 +66,8 @@ def extract_sweeps(config: dict[str, dict[str, str]], prefix):
     pattern = re.compile(f"{prefix}(\d+)?")
     # find all the sweep sections in the config
     sweep_sections = [section for section in config.keys() if pattern.fullmatch(section)]
+    if not len(sweep_sections):
+        return None
     # mapping literals to the method for constructing the parameter values
     method_mapping = {
         "linspace": np.linspace,

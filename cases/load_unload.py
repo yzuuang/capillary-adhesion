@@ -39,7 +39,7 @@ def main():
     # check if parameter sweep is specified in config
     sweep_section_prefix = "ParameterSweep"
     sweeps = extract_sweeps(config, sweep_section_prefix)
-    if not len(sweeps):
+    if sweeps is None:
         switch_log_file(run.log_file)
         run_one_trip(run, config)
         create_overview_animation(run.path)
