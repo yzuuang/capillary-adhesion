@@ -44,7 +44,7 @@ def preview_surface_and_gap(
     lower_surface_params: dict[str, str],
     trajectory_params: dict[str, str],
 ):
-    grid = get_region_specs(grid_params)
+    grid = get_grid_specs(grid_params)
     h1 = match_shape_and_get_height(grid, upper_surface_params)
     h0 = match_shape_and_get_height(grid, lower_surface_params)
 
@@ -121,7 +121,7 @@ class Sweeps:
             yield zip(keys, values_combo)
 
 
-def get_region_specs(grid_params: dict[str, str]):
+def get_grid_specs(grid_params: dict[str, str]):
     # grid
     a = float(grid_params["pixel_size"])
     N = int(grid_params["nb_pixels"])
