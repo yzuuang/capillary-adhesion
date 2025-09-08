@@ -93,7 +93,6 @@ class AugmentedLagrangian:
         logger.info("="*50)
 
         # initial values
-        original_shape = np.shape(x0)
         t_exec = 0
         x_plus = x0
         lam_plus = lam0
@@ -116,13 +115,11 @@ class AugmentedLagrangian:
             # derive augmented lagrangian
             def l(x: np.ndarray):
                 """Augmented Lagrangian."""
-                x = x.reshape(original_shape)
                 g_x = numopt.g(x)
                 return numopt.f(x) + lam * g_x + (0.5 * c) * g_x**2
 
             def l_grad(x: np.ndarray):
                 """Gradient of the Augmented Lagrangian."""
-                x = x.reshape(original_shape)
                 g_D_x = numopt.g_grad(x)
                 l_D_x = numopt.f_grad(x) + lam * g_D_x + c * numopt.g(x) * g_D_x
                 # projecting to the feasible range

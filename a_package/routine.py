@@ -105,22 +105,19 @@ logger = logging.getLogger(__name__)
 
 def simulate_quasi_static_pull_push(
     store: FilesToReadWrite,
-    grid: Grid,
-    upper: np.ndarray,
-    lower: np.ndarray,
-    capillary: CapillaryBridge,
-    phase: np.ndarray,
-    volume: float,
+    formulation: Formulation,
     minimiser: AugmentedLagrangian,
+    volume: float,
+    phase_init: np.ndarray,
     trajectory: list[float],
     round_trip: bool = True,
 ):
-    # save the configurations
-    store.save("modelling", capillary)
-    store.save("solving", minimiser)
-    sim = SimulationResult("modelling.json", "solving.json", [])
+    # # save the configurations
+    # store.save("modelling", capillary)
+    # store.save("solving", minimiser)
+    # sim = SimulationResult("modelling.json", "solving.json", [])
 
-    formulation = Formulation(grid, upper, lower, capillary)
+    # formulation = Formulation(grid, upper, lower, capillary)
 
     trajectory = np.array(trajectory)
     if round_trip:
@@ -131,7 +128,7 @@ def simulate_quasi_static_pull_push(
 
     # inform
     logger.info(
-        f"Problem size: {grid.nx}x{grid.ny}. "
+        f"Problem size: {'x'.join(str(dim) for dim in phase_init.shape)}. "
         f"Simulating for all {len(trajectory)} mean distance values in...\n{trajectory}"
     )
     report = {
@@ -141,32 +138,37 @@ def simulate_quasi_static_pull_push(
     }
 
     # simulate
-    x = np.ravel(phase)
+    original_shape = np.shape(phase_init.squeeze())
+    x = phase_init
     lam = 0.0
-    for index, delta in enumerate(trajectory):
+    for index, delta_z in enumerate(trajectory):
         # update the parameter
-        logger.info(f"Parameter of interest: mean distance={delta}")
-        formulation.update_gap(delta)
+        logger.info(f"Parameter of interest: mean distance={delta_z}")
+        formulation.update_gap(delta_z)
         formulation.update_phase_field(x)
 
         # solve the problem
-        numopt = formulation.formulate_with_constant_volume(volume)
-        [x, lam, t_exec, *flags] = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
-        if not flags[0]:
+        numopt = formulation.create_numopt_with_constant_volume(volume)
+        result = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
+
+        # check flags
+        if not result.is_converged:
             report["not_converged"].append(index)
-        if flags[1]:
+        if result.reached_iter_limit:
             report["iter_limit"].append(index)
-        if flags[2]:
+        if result.had_abnormal_stop:
             report["abnormal_stop"].append(index)
 
-        # save the results
-        formulation.phase = x.reshape(grid.nx, grid.ny)
-        # data = SimulationStep([0, 0], delta, t_exec, formulation.phase, lam)
-        # store.save(f"steps---{index}", data)
-        # sim.steps.append(f"steps---{index}.json")
+        # check bonds (feasibility)
+        phase = np.reshape(result.primal, original_shape)
+        formulation.validate_phase_field(phase)
 
-        # Check the bounds on phase field
-        formulation.validate_phase_field()
+        # save the results
+        store.save(f"step-{index}", SimulationStep([0,0], delta_z, result.time, phase, result.dual))
+
+        # update next iter
+        x = result.primal
+        lam = result.dual
 
     # report
     if all(not len(v) for v in report.values()):
@@ -174,80 +176,74 @@ def simulate_quasi_static_pull_push(
     else:
         logger.warning(f"The following steps may have problems:\n {report}")
 
-    # Save simulation results
-    store.save("result", sim)
 
-    # Load again to get all data (because they were saved part by part)
-    sim = store.load("result", SimulationResult)
-    return sim
+# FIXME: sliding
+# def simulate_quasi_static_slide(
+#     store: FilesToReadWrite,
+#     grid: Grid,
+#     upper: np.ndarray,
+#     lower: np.ndarray,
+#     capillary: CapillaryBridge,
+#     phase: np.ndarray,
+#     volume: float,
+#     minimiser: AugmentedLagrangian,
+#     slide_by_indices: list[tuple[int, int]],
+# ):
+#     # save the configurations
+#     store.save("modelling", capillary)
+#     store.save("solving", minimiser)
+#     sim = SimulationResult("modelling.json", "solving.json", [])
 
+#     formulation = Formulation(grid, upper, lower, capillary)
 
-def simulate_quasi_static_slide(
-    store: FilesToReadWrite,
-    grid: Grid,
-    upper: np.ndarray,
-    lower: np.ndarray,
-    capillary: CapillaryBridge,
-    phase: np.ndarray,
-    volume: float,
-    minimiser: AugmentedLagrangian,
-    slide_by_indices: list[tuple[int, int]],
-):
-    # save the configurations
-    store.save("modelling", capillary)
-    store.save("solving", minimiser)
-    sim = SimulationResult("modelling.json", "solving.json", [])
+#     # inform
+#     logger.info(
+#         f"Problem size: {grid.nx}x{grid.ny}. "
+#         f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}"
+#     )
+#     report = {
+#         "not_converged": [],
+#         "iter_limit": [],
+#         "abnormal_stop": [],
+#     }
 
-    formulation = Formulation(grid, upper, lower, capillary)
+#     # simulate
+#     x = np.ravel(phase)
+#     lam = 0.0
+#     for index, coords in enumerate(slide_by_indices):
+#         # update the parameter
+#         logger.info(f"Parameter of interest: displacement={coords}")
+#         # FIXME: sliding
+#         formulation.update_phase_field(x)
 
-    # inform
-    logger.info(
-        f"Problem size: {grid.nx}x{grid.ny}. "
-        f"Simulating for all {len(slide_by_indices)} mean distance values in...\n{slide_by_indices}"
-    )
-    report = {
-        "not_converged": [],
-        "iter_limit": [],
-        "abnormal_stop": [],
-    }
+#         # solve the problem
+#         numopt = formulation.formulate_with_constant_volume(volume)
+#         [x, lam, t_exec, *flags] = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
+#         if not flags[0]:
+#             report["not_converged"].append(index)
+#         if flags[1]:
+#             report["iter_limit"].append(index)
+#         if flags[2]:
+#             report["abnormal_stop"].append(index)
 
-    # simulate
-    x = np.ravel(phase)
-    lam = 0.0
-    for index, coords in enumerate(slide_by_indices):
-        # update the parameter
-        logger.info(f"Parameter of interest: displacement={coords}")
-        # FIXME: sliding
-        formulation.update_phase_field(x)
+#         # save the results
+#         formulation.phase = x.reshape(grid.nx, grid.ny)
+#         # data = SimulationStep([0, 0], delta, t_exec, formulation.phase, lam)
+#         # store.save(f"steps---{index}", data)
+#         # sim.steps.append(f"steps---{index}.json")
 
-        # solve the problem
-        numopt = formulation.formulate_with_constant_volume(volume)
-        [x, lam, t_exec, *flags] = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
-        if not flags[0]:
-            report["not_converged"].append(index)
-        if flags[1]:
-            report["iter_limit"].append(index)
-        if flags[2]:
-            report["abnormal_stop"].append(index)
+#         # Check the bounds on phase field
+#         formulation.validate_phase_field()
 
-        # save the results
-        formulation.phase = x.reshape(grid.nx, grid.ny)
-        # data = SimulationStep([0, 0], delta, t_exec, formulation.phase, lam)
-        # store.save(f"steps---{index}", data)
-        # sim.steps.append(f"steps---{index}.json")
+#     # report
+#     if all(not len(v) for v in report.values()):
+#         logger.info("Congrats! All simulation steps went well.")
+#     else:
+#         logger.warning(f"The following steps may have problems:\n {report}")
 
-        # Check the bounds on phase field
-        formulation.validate_phase_field()
+#     # Save simulation results
+#     store.save("result", sim)
 
-    # report
-    if all(not len(v) for v in report.values()):
-        logger.info("Congrats! All simulation steps went well.")
-    else:
-        logger.warning(f"The following steps may have problems:\n {report}")
-
-    # Save simulation results
-    store.save("result", sim)
-
-    # Load again to get all data (because they were saved part by part)
-    sim = store.load("result", SimulationResult)
-    return sim
+#     # Load again to get all data (because they were saved part by part)
+#     sim = store.load("result", SimulationResult)
+#     return sim
