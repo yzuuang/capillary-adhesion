@@ -32,8 +32,9 @@ class Formulation:
         self.fem = FirstOrderElement(self.grid)
         self.element_area = 0.5 * self.grid.lx * self.grid.ly
         self.at_contact = None
-        self.phase = None
-        self.phase_grad = None
+        # these values are for quadrature points
+        self._quad_phase = None
+        self._quad_phase_grad = None
 
     def update_gap(self, z1: float):
         height_diff = self.upper + z1 - self.lower
@@ -41,45 +42,53 @@ class Formulation:
         # ideal plastic contact, material interpenetration
         gap = np.clip(height_diff, 0, None)
         # map to quadrature points
-        self.capi.gap = self.fem.K_centroid @ gap
+        self.capi.gap = self.fem.K_centroid @ gap.ravel()
 
-    def update_phase_field(self, phase: np.ndarray):
+    def update_phase_field(self, nodal_phase: np.ndarray):
         # Clean the phase-field where the solid bodies contact
-        phase[self.at_contact] = 0.0
+        print(nodal_phase.shape)
+        nodal_phase[self.at_contact] = 0.0
         # map to quadrature points
-        self.phase = self.fem.K_centroid @ phase
-        self.phase_grad = np.stack([self.fem.Dx @ phase, self.fem.Dy @ phase], axis=0)
+        self._quad_phase = self.fem.K_centroid @ nodal_phase.ravel()
+        self._quad_phase_grad = np.stack([self.fem.Dx @ nodal_phase.ravel(), self.fem.Dy @ nodal_phase.ravel()], axis=0)
 
-    def validate_phase_field(self, phase: np.ndarray):
+    def validate_phase_field(self, nodal_phase: np.ndarray):
         # check phase field < 0
-        if np.any(phase < 0):
-            outlier = np.where(phase < 0, phase, np.nan)
+        if np.any(nodal_phase < 0):
+            outlier = np.where(nodal_phase < 0, nodal_phase, np.nan)
             count = np.count_nonzero(~np.isnan(outlier))
             extreme = np.nanmin(outlier)
             logger.warning(f"Notice: phase field has {count} values < 0, min at {extreme:.2e}")
         # check phase field > 1
-        if np.any(phase > 1):
-            outlier = np.where(phase > 1, phase, np.nan)
+        if np.any(nodal_phase > 1):
+            outlier = np.where(nodal_phase > 1, nodal_phase, np.nan)
             count = np.count_nonzero(~np.isnan(outlier))
             extreme = np.nanmax(outlier)
             logger.warning(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
 
-    def get_volume(self):
-        integrand = self.capi.compute_volume(self.phase)
-        spatial_axes = np.arange(1, np.ndim(integrand))
-        return self.element_area * np.sum(integrand, spatial_axes)
+    def get_energy(self):
+        integrand = self.capi.compute_energy(self._quad_phase, self._quad_phase_grad)
+        return self.element_area * np.sum(integrand)
 
-    def formulate_with_constant_volume(self, volume: float):
+    def get_volume(self):
+        integrand = self.capi.compute_volume(self._quad_phase)
+        return self.element_area * np.sum(integrand)
+
+    def get_perimeter(self):
+        integrand = self.capi.compute_perimeter(self._quad_phase, self._quad_phase_grad)
+        return self.element_area * np.sum(integrand)
+
+    def create_numopt_with_constant_volume(self, volume: float):
 
         def objective(x: np.ndarray):
             self.update_phase_field(x)
-            integrand = self.capi.compute_energy(self.phase, self.phase_grad)
-            spatial_axes = np.arange(1, np.ndim(integrand))
-            return self.element_area * np.sum(integrand, spatial_axes)
+            return self.get_energy()
 
         def objective_jacobian(x: np.ndarray):
             self.update_phase_field(x)
-            [energy_D_phase, energy_D_phase_grad] = self.capi.compute_energy_jacobian(self.phase, self.phase_grad)
+            [energy_D_phase, energy_D_phase_grad] = self.capi.compute_energy_jacobian(
+                self._quad_phase, self._quad_phase_grad
+            )
             return (
                 self.element_area
                 * (
@@ -92,13 +101,11 @@ class Formulation:
 
         def constraint(x: np.ndarray):
             self.update_phase_field(x)
-            integrand = self.capi.compute_volume(self.phase)
-            spatial_axes = np.arange(1, np.ndim(integrand))
-            return self.element_area * np.sum(integrand, spatial_axes) - volume
+            return self.get_volume() - volume
 
         def constraint_jacobian(x: np.ndarray):
             self.update_phase_field(x)
-            [volume_D_phase] = self.capi.compute_volume_jacobian(self.phase)
+            [volume_D_phase] = self.capi.compute_volume_jacobian(self._quad_phase)
             return (
                 self.element_area
                 * (

@@ -17,7 +17,7 @@ from cases.configs import (
     preview_surface_and_gap,
     save_config_to_file,
     extract_sweeps,
-    get_region_specs,
+    get_grid_specs,
     match_shape_and_get_height,
     get_capillary,
     get_optimizer,
@@ -65,7 +65,7 @@ def main():
 def run_one_trip(run, config: dict[str, dict[str, str]]):
 
     # grid
-    grid = get_region_specs(config["Grid"])
+    grid = get_grid_specs(config["Grid"])
 
     # surfaces
     upper = match_shape_and_get_height(grid, config["UpperSurface"])

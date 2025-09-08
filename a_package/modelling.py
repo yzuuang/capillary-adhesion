@@ -88,7 +88,7 @@ class CapillaryBridge:
         # According to Modica-Mortola's theorem
         self.perimeter_prefactor = 3.0
 
-    def compute_perimeter(self, phase: components_t, phase_grad: components_t) -> components_t:
+    def compute_perimeter(self, phase: components_t, phase_grad: components_t):
         """
         - phase: phase-field
         - phase_grad: gradient of phase-field
@@ -97,7 +97,7 @@ class CapillaryBridge:
             (1 / self.eta) * self.double_well_penalty(phase) + self.eta * self.square_penalty(phase_grad)
         )
 
-    def compute_energy(self, phase: components_t, phase_grad: components_t) -> components_t:
+    def compute_energy(self, phase: components_t, phase_grad: components_t):
         """
         - phase: phase-field
         - phase_grad: gradient of phase-field
@@ -120,7 +120,7 @@ class CapillaryBridge:
     def square_penalty(x):
         return np.sum(x**2, axis=0, keepdims=True)
 
-    # def compute_force(self, phase: components_t, phase_grad: components_t) -> components_t:
+    # def compute_force(self, phase: components_t, phase_grad: components_t):
     #     # the common part of 3 components
     #     liquid_vapour_D_gap = (
     #         self.perimeter_prefactor
@@ -135,9 +135,7 @@ class CapillaryBridge:
 
     #     return f_x, f_y, f_z
 
-    def compute_energy_jacobian(
-        self, phase: components_t, phase_grad: components_t
-    ) -> tuple[components_t, components_t]:
+    def compute_energy_jacobian(self, phase: components_t, phase_grad: components_t):
         """
         - phase: phase-field
         - phase_grad: gradient of phase-field
@@ -165,8 +163,8 @@ class CapillaryBridge:
     def square_penalty_derivatie(x):
         return 2 * x
 
-    def compute_volume(self, phase: components_t) -> components_t:
+    def compute_volume(self, phase: components_t):
         return phase * self.gap
 
-    def compute_volume_jacobian(self, phase: components_t) -> tuple[components_t]:
-        return self.gap
+    def compute_volume_jacobian(self, phase: components_t):
+        return (self.gap,)
