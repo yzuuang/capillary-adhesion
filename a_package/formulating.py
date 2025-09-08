@@ -30,7 +30,7 @@ class Formulation:
 
     def __post_init__(self):
         self.fem = FirstOrderElement(self.grid)
-        self.element_area = 0.5 * self.grid.lx * self.grid.ly
+        self.element_area = 0.5 * self.grid.dx * self.grid.dy
         self.at_contact = None
         # these values are for quadrature points
         self._quad_phase = None
@@ -38,19 +38,22 @@ class Formulation:
 
     def update_gap(self, z1: float):
         height_diff = self.upper + z1 - self.lower
+        # match the shape as FEM expects a vector
+        height_diff = np.ravel(height_diff)
+
         self.at_contact = np.nonzero(height_diff < 0)
         # ideal plastic contact, material interpenetration
         gap = np.clip(height_diff, 0, None)
-        # map to quadrature points
-        self.capi.gap = self.fem.K_centroid @ gap.ravel()
+        # map to quadrature points & match the shape as modelling expects components as the first dimension
+        self.capi.gap = np.vstack([self.fem.K_centroid @ gap])
 
     def update_phase_field(self, nodal_phase: np.ndarray):
+        nodal_phase = np.ravel(nodal_phase)
         # Clean the phase-field where the solid bodies contact
-        print(nodal_phase.shape)
         nodal_phase[self.at_contact] = 0.0
-        # map to quadrature points
-        self._quad_phase = self.fem.K_centroid @ nodal_phase.ravel()
-        self._quad_phase_grad = np.stack([self.fem.Dx @ nodal_phase.ravel(), self.fem.Dy @ nodal_phase.ravel()], axis=0)
+        # map to quadrature points & match the shape as modelling expects components as the first dimension
+        self._quad_phase = np.vstack([self.fem.K_centroid @ nodal_phase])
+        self._quad_phase_grad = np.vstack([self.fem.Dx @ nodal_phase, self.fem.Dy @ nodal_phase])
 
     def validate_phase_field(self, nodal_phase: np.ndarray):
         # check phase field < 0
