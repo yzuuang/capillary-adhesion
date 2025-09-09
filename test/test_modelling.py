@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from a_package.modelling import CapillaryBridge
-from a_package.computing import Grid
+from a_package.numeric import Grid
 
 
 show_me_plot = False

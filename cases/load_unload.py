@@ -5,14 +5,10 @@ import logging
 import numpy as np
 import numpy.random as random
 
-from a_package.storing import working_directory
-from a_package.formulating import Formulation
-from a_package.simulating import simulate_quasi_static_pull_push
-from a_package.postprocessing import post_process
-from a_package.storing import working_directory
-
-from utils.logging import reset_logging, switch_log_file
-from utils.runtime import register_run
+from a_package.workflow.formulating import Formulation
+from a_package.workflow.simulating import simulate_quasi_static_pull_push
+from a_package.workflow.postprocessing import post_process
+from a_package.utils import working_directory, register_run, reset_logging, switch_log_file
 
 from cases.configs import (
     read_config_files,
