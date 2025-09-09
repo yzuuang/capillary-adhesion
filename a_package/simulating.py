@@ -3,12 +3,11 @@ Simulation routines: modelling, solving and post-processing.
 """
 
 import dataclasses as dc
+import typing as t
 import logging
 
 import numpy as np
 
-from a_package.modelling import CapillaryBridge
-from a_package.computing import Grid
 from a_package.minimising import AugmentedLagrangian
 from a_package.formulating import Formulation
 from a_package.storing import FilesToReadWrite
@@ -17,90 +16,20 @@ from a_package.storing import FilesToReadWrite
 logger = logging.getLogger(__name__)
 
 
-@dc.dataclass
+@dc.dataclass(init=True)
 class SimulationStep:
     m: tuple[int, int]
     d: float
     t_exec: float
     phi: np.ndarray
-    lam: np.ndarray
+    lam: float
 
 
-@dc.dataclass
+@dc.dataclass(init=True)
 class SimulationResult:
-    modelling: CapillaryBridge
-    solving: AugmentedLagrangian
+    formulating: Formulation
+    minimising: AugmentedLagrangian
     steps: list[SimulationStep]
-
-
-def post_process(res: SimulationResult):
-    # allocate memory
-    n_step = len(res.steps)
-    n_dimension = 3
-    t = np.empty(n_step)
-    g = []
-    phi = []
-    r = np.empty((n_step, n_dimension))  
-    E = np.empty((n_step))               
-    p = np.empty((n_step))               
-    V = np.empty((n_step))               
-    P = np.empty((n_step))               
-
-    # use the model for computing extra quantities
-    capi = res.modelling
-
-    # Convert data "rows" to "columns"
-    for i, step in enumerate(res.steps):
-        t[i] = step.t_exec
-
-        capi.ix1_iy1 = step.m
-        capi.z1 = step.d
-        capi.update_gap()
-        g.append(capi.g)
-
-        capi.phi = step.phi
-        capi.update_phase_field()
-        phi.append(capi.phi)
-
-        r[i] = capi.displacement
-
-        E[i] = capi.energy
-        p[i] = step.lam
-        V[i] = capi.volume
-        P[i] = capi.perimeter
-
-    # get normal force by numerical differences of energy
-    Fz = -(E[1:] - E[:-1]) / (r[1:, 2] - r[:-1, 2])
-
-    # pack in an object
-    # HACK: skip this "troublemaking" value
-    # evo = Evolution(t, g, phi, r, E, p, V, P, Fz)
-    evo = Evolution(t, g, phi, r, E, V, P, Fz)
-    return ProcessedResult(res.modelling, res.solving, evo)
-
-
-@dc.dataclass
-class Evolution:
-    t_exec: np.ndarray
-    g: list[np.ndarray]
-    phi: list[np.ndarray]
-    r: np.ndarray       # relative displacement
-    E: np.ndarray       # energy
-    # Hack: skip this "troublemaking" value
-    # p: np.ndarray       # presure
-    V: np.ndarray       # volume
-    P: np.ndarray       # perimeter
-    Fz: np.ndarray      # normal force
-
-
-@dc.dataclass
-class ProcessedResult:
-    modelling: CapillaryBridge
-    solving: AugmentedLagrangian
-    evolution: Evolution
-
-
-logger = logging.getLogger(__name__)
 
 
 def simulate_quasi_static_pull_push(
@@ -112,12 +41,10 @@ def simulate_quasi_static_pull_push(
     trajectory: list[float],
     round_trip: bool = True,
 ):
-    # # save the configurations
-    # store.save("modelling", capillary)
-    # store.save("solving", minimiser)
-    # sim = SimulationResult("modelling.json", "solving.json", [])
-
-    # formulation = Formulation(grid, upper, lower, capillary)
+    # save the configurations
+    store.save("simulation---formulating", formulation)
+    store.save("simulation---minimising", minimiser)
+    result = SimulationResult("simulation---formulating.json", "simulation---minimising.json", [])
 
     trajectory = np.array(trajectory)
     if round_trip:
@@ -149,26 +76,30 @@ def simulate_quasi_static_pull_push(
 
         # solve the problem
         numopt = formulation.create_numopt_with_constant_volume(volume)
-        result = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
+        solver_result = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
 
         # check flags
-        if not result.is_converged:
+        if not solver_result.is_converged:
             report["not_converged"].append(index)
-        if result.reached_iter_limit:
+        if solver_result.reached_iter_limit:
             report["iter_limit"].append(index)
-        if result.had_abnormal_stop:
+        if solver_result.had_abnormal_stop:
             report["abnormal_stop"].append(index)
 
         # check bonds (feasibility)
-        phase = np.reshape(result.primal, original_shape)
+        phase = np.reshape(solver_result.primal, original_shape)
         formulation.validate_phase_field(phase)
 
         # save the results
-        store.save(f"step-{index}", SimulationStep([0,0], delta_z, result.time, phase, result.dual))
+        store.save(
+            f"simulation---steps---{index}",
+            SimulationStep([0, 0], delta_z, solver_result.time, phase, solver_result.dual),
+        )
+        result.steps.append(f"simulation---steps---{index}.json")
 
         # update next iter
-        x = result.primal
-        lam = result.dual
+        x = phase
+        lam = solver_result.dual
 
     # report
     if all(not len(v) for v in report.values()):
@@ -176,17 +107,19 @@ def simulate_quasi_static_pull_push(
     else:
         logger.warning(f"The following steps may have problems:\n {report}")
 
+    store.save("simulation", result)
+
+    # reload so that every string represented objects are also loaded as objects
+    return store.load("simulation", SimulationResult)
+
 
 # FIXME: sliding
 # def simulate_quasi_static_slide(
 #     store: FilesToReadWrite,
-#     grid: Grid,
-#     upper: np.ndarray,
-#     lower: np.ndarray,
-#     capillary: CapillaryBridge,
-#     phase: np.ndarray,
-#     volume: float,
+#     formulation: Formulation,
 #     minimiser: AugmentedLagrangian,
+#     volume: float,
+#     phase_init: np.ndarray,
 #     slide_by_indices: list[tuple[int, int]],
 # ):
 #     # save the configurations
