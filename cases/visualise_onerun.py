@@ -19,7 +19,7 @@ def create_overview_animation(run_path):
     run_dir = RunDir(run_path)
     # retrieve processed result
     with working_directory(run_dir.results_dir, read_only=True) as store:
-        pr = store.load("result", ProcessedResult)
+        pr = store.load("final", ProcessedResult)
     # create anime
     latexify_plot(15)
     anim = animate_droplet_evolution_with_curves(pr)
@@ -40,7 +40,7 @@ def animate_droplet_evolution(pr: ProcessedResult):
         ax.set_ylabel(r"Position $y/\eta$")        
         return ax.images
 
-    n_step = len(pr.evolution.t_exec)
+    n_step = pr.evolution.nb_steps
     return animation.FuncAnimation(fig, update_image, n_step, interval=200, repeat_delay=3000)
 
 
@@ -54,15 +54,15 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
     axs_lhs = sf1.subplots(2, 1, sharex=True, height_ratios=[1, 4])
     axs = np.append(axs, axs_lhs)
 
-    n_step = len(pr.evolution.t_exec)
-    idx_row = pr.modelling.region.nx // 2
-    a = pr.modelling.region.a
+    n_step = pr.evolution.nb_steps
+    idx_row = pr.formulating.grid.nx // 2
+    a = pr.formulating.grid.a
 
     # decides the view limit
     view_margin_scale = 0.05
 
-    h_min = np.amin(pr.modelling.h2[idx_row, :]) / a
-    h_max = (np.amax(pr.modelling.h1[idx_row, :]) + np.amax(pr.evolution.r[:, -1])) / a
+    h_min = np.amin(pr.formulating.lower[idx_row, :]) / a
+    h_max = (np.amax(pr.formulating.upper[idx_row, :]) + np.amax(pr.evolution.r[:, -1])) / a
     h_margin = view_margin_scale * (h_max - h_min)
     h_min = h_min - h_margin
     h_max = h_max + 10*h_margin  # for the legend
@@ -111,7 +111,7 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
         axs[-2].set_title("Cross section")
 
         plot_combined_topography(axs[-1], get_capillary_state(pr, i_frame))
-        axs[-1].axhline(pr.modelling.region.y[idx_row] / a, color="k")
+        axs[-1].axhline(pr.formulating.grid.y[idx_row] / a, color="k")
         axs[-1].set_ylabel(r"Position $y/a$")
         axs[-1].set_title("Gap & Phase")
 
