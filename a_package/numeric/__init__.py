@@ -1,2 +1,2 @@
-from .computing import Grid, FirstOrderElement
-from .minimising import NumOptEq, AugmentedLagrangian
+from .compute import Grid, FirstOrderElement
+from .optimizer import NumOptEq, AugmentedLagrangian

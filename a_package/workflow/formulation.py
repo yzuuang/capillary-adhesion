@@ -7,7 +7,7 @@ import dataclasses as dc
 
 import numpy as np
 
-from a_package.modelling import CapillaryBridge
+from a_package.models import CapillaryBridge
 from a_package.numeric import Grid, FirstOrderElement, NumOptEq
 
 
