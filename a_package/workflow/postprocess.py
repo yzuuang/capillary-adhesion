@@ -4,8 +4,8 @@ import dataclasses as dc
 import numpy as np
 
 
-from a_package.workflow.formulating import Formulation 
-from a_package.workflow.simulating import SimulationResult
+from a_package.workflow.formulation import Formulation 
+from a_package.workflow.simulation import SimulationResult
 from a_package.numeric import AugmentedLagrangian
 
 

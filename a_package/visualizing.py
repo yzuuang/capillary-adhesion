@@ -7,9 +7,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from a_package.modelling import SelfAffineRoughness
+from a_package.models import SelfAffineRoughness
 from a_package.numeric import Grid
-from a_package.workflow.postprocessing import ProcessedResult
+from a_package.workflow.postprocess import ProcessedResult
 
 
 def get_capillary_state(pr: ProcessedResult, index: int):
