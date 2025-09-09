@@ -16,9 +16,9 @@ import numpy as np
 import numpy.random as random
 import matplotlib.pyplot as plt
 
+
 from a_package.modelling import SelfAffineRoughness, psd_to_height, CapillaryBridge
-from a_package.computing import Grid
-from a_package.minimising import AugmentedLagrangian
+from a_package.numeric import Grid, AugmentedLagrangian
 
 
 def read_config_files(files: list):

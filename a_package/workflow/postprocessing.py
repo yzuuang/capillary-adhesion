@@ -1,14 +1,12 @@
-import os
 import logging
-import typing as t
 import dataclasses as dc
 
 import numpy as np
 
 
-from a_package.formulating import Formulation 
-from a_package.minimising import AugmentedLagrangian
-from a_package.simulating import SimulationResult
+from a_package.workflow.formulating import Formulation 
+from a_package.workflow.simulating import SimulationResult
+from a_package.numeric import AugmentedLagrangian
 
 
 logger = logging.getLogger(__name__)

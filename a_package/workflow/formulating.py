@@ -1,5 +1,5 @@
 """
-Simulation routines: modelling, computing and minimising are coupled here.
+modelling and computing are coupled here.
 """
 
 import logging
@@ -8,8 +8,7 @@ import dataclasses as dc
 import numpy as np
 
 from a_package.modelling import CapillaryBridge
-from a_package.computing import Grid, FirstOrderElement
-from a_package.minimising import NumOptEq
+from a_package.numeric import Grid, FirstOrderElement, NumOptEq
 
 
 logger = logging.getLogger(__name__)
@@ -17,11 +16,7 @@ logger = logging.getLogger(__name__)
 
 @dc.dataclass(init=True)
 class Formulation:
-    """All necessary parameters for visualizing a capillary bridge.
-
-    Data attributes: field is stored with nodal values as 2D array.
-    1 refer to the solid top; 2 refer to the solid base.
-    """
+    """All necessary methods to formulate into a optimisation problem."""
 
     grid: Grid
     upper: np.ndarray

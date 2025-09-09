@@ -1,16 +1,12 @@
-"""
-Simulation routines: modelling, solving and post-processing.
-"""
 
 import dataclasses as dc
-import typing as t
 import logging
 
 import numpy as np
 
-from a_package.minimising import AugmentedLagrangian
-from a_package.formulating import Formulation
-from a_package.storing import FilesToReadWrite
+from a_package.workflow.formulating import Formulation
+from a_package.numeric import AugmentedLagrangian
+from a_package.utils import FilesToReadWrite
 
 
 logger = logging.getLogger(__name__)
