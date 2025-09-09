@@ -36,6 +36,10 @@ class Formulation:
         self._quad_phase = None
         self._quad_phase_grad = None
 
+    def get_gap(self, z1: float):
+        """For the sake of post-processing."""
+        return np.clip(self.upper + z1 - self.lower, 0, None) 
+
     def update_gap(self, z1: float):
         height_diff = self.upper + z1 - self.lower
         # match the shape as FEM expects a vector

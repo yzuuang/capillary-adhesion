@@ -7,7 +7,9 @@ import numpy.random as random
 
 from a_package.storing import working_directory
 from a_package.formulating import Formulation
-from a_package.routine import simulate_quasi_static_pull_push, post_process
+from a_package.simulating import simulate_quasi_static_pull_push
+from a_package.postprocessing import post_process
+from a_package.storing import working_directory
 
 from utils.logging import reset_logging, switch_log_file
 from utils.runtime import register_run
@@ -94,15 +96,15 @@ def run_one_trip(run, config: dict[str, dict[str, str]]):
     V = formulation.get_volume() * V_percent
 
     # run simulation
-    with working_directory(run.intermediate_dir, read_only=False) as store:
+    with working_directory(run.results_dir, read_only=False) as store:
         # start sim with random initial guess
         phi_init = random.rand(grid.nx, grid.ny)
-        sim = simulate_quasi_static_pull_push(store, grid, upper, lower, capi, phi_init, V, solver, trajectory)
+        sim = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
 
     # post-process
     with working_directory(run.results_dir, read_only=False) as store:
         p_sim = post_process(sim)
-        store.save("result", p_sim)
+        store.save("final", p_sim)
 
 
 if __name__ == "__main__":

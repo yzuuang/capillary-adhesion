@@ -4,7 +4,7 @@ from configparser import ConfigParser
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.routine import ProcessedResult
+from a_package.postprocessing import ProcessedResult
 from a_package.storing import working_directory
 from utils.runtime import RunDir
 

@@ -72,18 +72,19 @@ def psd_to_height(psd: components_t, rng=None, seed=None):
     return fft.ifftn(h_norm * phase_angle).real
 
 
+@dc.dataclass(init=True)
 class CapillaryBridge:
 
-    def __init__(self, theta: float, eta: float, gap: components_t):
-        """
-        - theta: contact angle
-        - eta: interface thickness
-        - gap: gap between two rigid bodies
-        """
-        self.curv = 0.5 * (abs(np.sin(theta)) + np.asin(np.cos(theta)) / np.cos(theta))
-        self.gamma = -np.cos(theta)
-        self.eta = eta
-        self.gap = gap
+    theta: float
+    """contact angle"""
+    eta: float
+    """interface thickness"""
+    gap: components_t
+    """gap between two rigid bodies"""
+
+    def __post_init__(self):
+        self.curv = 0.5 * (abs(np.sin(self.theta)) + np.asin(np.cos(self.theta)) / np.cos(self.theta))
+        self.gamma = -np.cos(self.theta)
 
         # According to Modica-Mortola's theorem
         self.perimeter_prefactor = 3.0

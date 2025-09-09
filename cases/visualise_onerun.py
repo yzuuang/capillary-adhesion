@@ -1,7 +1,7 @@
 import os
 import sys
 
-from a_package.routine import ProcessedResult
+from a_package.postprocessing import ProcessedResult
 from a_package.storing import working_directory
 from a_package.visualizing import *
 
