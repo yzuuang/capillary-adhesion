@@ -7,9 +7,6 @@
 import os
 import sys
 import re
-import functools
-import itertools
-import operator
 from configparser import ConfigParser
 
 import numpy as np
@@ -18,6 +15,7 @@ import matplotlib.pyplot as plt
 
 from a_package.models import SelfAffineRoughness, psd_to_height, CapillaryBridge
 from a_package.numeric import Grid, AugmentedLagrangian
+from a_package.utils import Sweep
 
 
 def read_config_files(files: list):
@@ -92,32 +90,7 @@ def extract_sweeps(config: dict[str, dict[str, str]], prefix):
     for section in sweep_sections:
         del config[section]
 
-    return Sweeps(sweep_specs)
-
-
-class Sweeps:
-
-    def __init__(self, sweep_specs: dict[tuple[str, str], np.ndarray]):
-        self._specs = sweep_specs
-
-    def __len__(self):
-        return (
-            0
-            if not len(self._specs)
-            else functools.reduce(operator.mul, (len(vals) for vals in self._specs.values()), 1)
-        )
-
-    def iter_config(self, config: dict[str, dict[str, str]]):
-        for updates in self._iter_combos():
-            for [key_pair, value] in updates:
-                config[key_pair[0]][key_pair[1]] = str(value)
-            yield config
-
-    def _iter_combos(self):
-        keys = list(self._specs.keys())
-        values_combos = itertools.product(*(self._specs.values()))
-        for values_combo in values_combos:
-            yield zip(keys, values_combo)
+    return Sweep(sweep_specs)
 
 
 def get_grid_specs(grid_params: dict[str, str]):
