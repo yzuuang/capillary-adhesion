@@ -72,7 +72,9 @@ def post_process(res: SimulationResult):
     Fz = -(E[1:] - E[:-1]) / (r[1:, 2] - r[:-1, 2])
 
     # pack in an object
-    evo = Evolution(t, g, phi, r, E, p, V, P, Fz)
+    # HACK: skip this "troublemaking" value
+    # evo = Evolution(t, g, phi, r, E, p, V, P, Fz)
+    evo = Evolution(t, g, phi, r, E, V, P, Fz)
     return ProcessedResult(res.modelling, res.solving, evo)
 
 
