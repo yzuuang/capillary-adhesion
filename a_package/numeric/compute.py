@@ -3,6 +3,7 @@ import dataclasses as dc
 import numpy as np
 import numpy.fft as fft
 import scipy.sparse as sparse
+
 # FIXME: interpolate the solid surface for sliding
 # from SurfaceTopography.Uniform.Interpolation import Bicubic
 
@@ -50,37 +51,37 @@ class FirstOrderElement:
 
         # K_a maps \phi grid points to central of the triangles, which are the quadrature points
         K_a_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_a_lower, (0, 0), (M, N), 1 / 3)
-        fill_cyclic_diagonal_2d(K_a_lower, (0, 1), (M, N), 1 / 3)
-        fill_cyclic_diagonal_2d(K_a_lower, (1, 0), (M, N), 1 / 3)
+        fill_cyclic_diagonal_pseudo_2d(K_a_lower, (0, 0), (M, N), 1 / 3)
+        fill_cyclic_diagonal_pseudo_2d(K_a_lower, (0, 1), (M, N), 1 / 3)
+        fill_cyclic_diagonal_pseudo_2d(K_a_lower, (1, 0), (M, N), 1 / 3)
 
         K_a_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_a_upper, (0, 1), (M, N), 1 / 3)
-        fill_cyclic_diagonal_2d(K_a_upper, (1, 0), (M, N), 1 / 3)
-        fill_cyclic_diagonal_2d(K_a_upper, (1, 1), (M, N), 1 / 3)
+        fill_cyclic_diagonal_pseudo_2d(K_a_upper, (0, 1), (M, N), 1 / 3)
+        fill_cyclic_diagonal_pseudo_2d(K_a_upper, (1, 0), (M, N), 1 / 3)
+        fill_cyclic_diagonal_pseudo_2d(K_a_upper, (1, 1), (M, N), 1 / 3)
 
         self.K_centroid = sparse.vstack([K_a_lower, K_a_upper], format="csr")
 
         # K_b maps \phi grid points to the difference in x direction
         K_b_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_b_lower, (0, 0), (M, N), -1)
-        fill_cyclic_diagonal_2d(K_b_lower, (1, 0), (M, N), 1)
+        fill_cyclic_diagonal_pseudo_2d(K_b_lower, (0, 0), (M, N), -1)
+        fill_cyclic_diagonal_pseudo_2d(K_b_lower, (1, 0), (M, N), 1)
 
         K_b_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_b_upper, (0, 1), (M, N), -1)
-        fill_cyclic_diagonal_2d(K_b_upper, (1, 1), (M, N), 1)
+        fill_cyclic_diagonal_pseudo_2d(K_b_upper, (0, 1), (M, N), -1)
+        fill_cyclic_diagonal_pseudo_2d(K_b_upper, (1, 1), (M, N), 1)
 
         self.Dx = sparse.vstack([K_b_lower, K_b_upper], format="csr") / region.dx
         # self.Dx_t = sparse.csr_matrix(self.Dx.T)
 
         # K_c maps \phi grid points to the difference in y direction
         K_c_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_c_lower, (0, 0), (M, N), -1)
-        fill_cyclic_diagonal_2d(K_c_lower, (0, 1), (M, N), 1)
+        fill_cyclic_diagonal_pseudo_2d(K_c_lower, (0, 0), (M, N), -1)
+        fill_cyclic_diagonal_pseudo_2d(K_c_lower, (0, 1), (M, N), 1)
 
         K_c_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_2d(K_c_upper, (1, 0), (M, N), -1)
-        fill_cyclic_diagonal_2d(K_c_upper, (1, 1), (M, N), 1)
+        fill_cyclic_diagonal_pseudo_2d(K_c_upper, (1, 0), (M, N), -1)
+        fill_cyclic_diagonal_pseudo_2d(K_c_upper, (1, 1), (M, N), 1)
 
         self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / region.dy
         # self.Dy_t = sparse.csr_matrix(self.Dy.T)
@@ -88,15 +89,15 @@ class FirstOrderElement:
     def interp_value_centroid(self, data):
         """Map nodal values to the interpolated values at centroid."""
         return self.K_centroid @ data
-    
+
     def prop_sens_value_centroid(self, data):
         """Propogate the sensitivity of corresponding interpolation backward."""
         return data @ self.K_centroid
-    
+
     def interp_gradient_x(self, data):
         """Map nodal values to the interpolated gradient values, component in x."""
         return self.Dx @ data
-    
+
     def prop_sens_gradient_x(self, data):
         """Propogate the sensitivity of corresponding interpolation backward."""
         return data @ self.Dx
@@ -119,10 +120,10 @@ def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
     mat[i, (i + j) % N] = val
 
 
-def fill_cyclic_diagonal_2d(mat: sparse.spmatrix, j: tuple[int, int], N: tuple[int, int], val: float):
+def fill_cyclic_diagonal_pseudo_2d(mat: sparse.spmatrix, j: tuple[int, int], N: tuple[int, int], val: float):
     """Fill cyclically, element-wise in the j-th diagonal of a matrix.
     The matrix represents a mapping from 2D data to 2D data.
-    However, the 2d array is ravelled into 1D array for efficiency.
+    However, the 2D data is ravelled and represented as a 1D array.
     """
     assert mat.ndim == 2
 
