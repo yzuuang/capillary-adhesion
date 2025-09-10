@@ -5,15 +5,22 @@ import logging
 import numpy as np
 import numpy.random as random
 
-from a_package.modelling import Region, CapillaryBridge
-from a_package.solving import AugmentedLagrangian
 from a_package.storing import working_directory
 from a_package.routine import simulate_quasi_static_pull_push, post_process
 
 from utils.logging import reset_logging, switch_log_file
 from utils.runtime import register_run
 
-from cases.configs import *
+from cases.configs import (
+    read_config_files,
+    preview_surface_and_gap,
+    save_config_to_file,
+    extract_sweeps,
+    get_region_specs,
+    match_shape_and_get_height,
+    get_capillary,
+    get_optimizer,
+)
 from cases.visualise_onerun import create_overview_animation
 
 
@@ -71,17 +78,10 @@ def run_one_trip(run, config: dict[str, dict[str, str]]):
     trajectory = np.linspace(d_max, d_min, nb_steps)
 
     # capillary model
-    eta = float(config["Capillary"]["interface_thickness"])
-    theta = (np.pi / 180) * float(config["Capillary"]["contact_angle_degree"])
-    capi = CapillaryBridge(region, eta, theta, upper, lower)
+    capi = get_capillary(region, config["Capillary"], upper, lower)
 
     # solver
-    i_max = int(config["Solver"]["max_nb_iters"])
-    l_max = int(config["Solver"]["max_nb_loops"])
-    tol_conver = float(config["Solver"]["tol_convergence"])
-    tol_constr = float(config["Solver"]["tol_constraints"])
-    c_init = float(config["Solver"]["init_penalty_weight"])
-    solver = AugmentedLagrangian(i_max, l_max, tol_conver, tol_constr, c_init)
+    solver = get_optimizer(config["Solver"])
 
     # liquid volume from a percentage specification
     V_percent = 0.01 * float(config["Capillary"]["liquid_volume_percent"])

@@ -1,3 +1,9 @@
+"""
+- Read & save INI format files
+- Parse content into parameter values as dict[str, dict[str, str]]
+- Deserialise into class instances
+"""
+
 import os
 import sys
 import re
@@ -9,7 +15,8 @@ from configparser import ConfigParser
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.modelling import Region, SelfAffineRoughness, wavevector_norm, PSD_to_height
+from a_package.modelling import Region, SelfAffineRoughness, wavevector_norm, PSD_to_height, CapillaryBridge
+from a_package.solving import AugmentedLagrangian
 
 
 def read_config_files(files: list):
@@ -207,3 +214,18 @@ def _get_height_of_pattern(region, surface_params: dict[str, str]):
 
     height = wave_L + wave_M + wave_S
     return np.atleast_2d(height)
+
+
+def get_capillary(region: Region, capillary_params: dict[str, str], upper, lower):
+    theta = (np.pi / 180) * float(capillary_params["contact_angle_degree"])
+    eta = float(capillary_params["interface_thickness"])
+    return CapillaryBridge(region, eta, theta, upper, lower)
+
+
+def get_optimizer(optimzer_params: dict[str, str]):
+    i_max = int(optimzer_params["max_nb_iters"])
+    l_max = int(optimzer_params["max_nb_loops"])
+    tol_conver = float(optimzer_params["tol_convergence"])
+    tol_constr = float(optimzer_params["tol_constraints"])
+    c_init = float(optimzer_params["init_penalty_weight"])
+    return AugmentedLagrangian(i_max, l_max, tol_conver, tol_constr, c_init)
