@@ -24,7 +24,7 @@ def create_overview_animation(run_path):
     latexify_plot(15)
     anim = animate_droplet_evolution_with_curves(pr)
     # save it
-    filename_base = os.path.join(run_dir.visuals_dir, f"overview---{sim_case}")
+    filename_base = os.path.join(run_dir.visuals_dir, f"overview")
     anim.save(f"{filename_base}.mp4", writer="ffmpeg")
     # return the anime, so it can be shown in interactive run
     return anim
