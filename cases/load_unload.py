@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.random as random
 
@@ -13,7 +14,6 @@ from a_package.utils import working_directory, register_run, reset_logging, swit
 
 from cases.configs import (
     read_config_files,
-    preview_surface_and_gap,
     save_config_to_file,
     extract_sweeps,
     get_grid_specs,
@@ -59,6 +59,38 @@ def main():
             save_config_to_file(config, sub_run.parameters_dir / f"subrun-{index}.ini")
             run_one_trip(sub_run, config)
             create_overview_animation(sub_run.path)
+
+
+def preview_surface_and_gap(
+    grid_params: dict[str, str],
+    upper_surface_params: dict[str, str],
+    lower_surface_params: dict[str, str],
+    trajectory_params: dict[str, str],
+):
+    region = get_grid_specs(grid_params)
+    h1 = match_shape_and_get_height(region, upper_surface_params)
+    h0 = match_shape_and_get_height(region, lower_surface_params)
+
+    border = [0, region.nx, 0, region.ny]
+
+    fig, ax = plt.subplots()
+    # image = ax.pcolormesh(region.xm/a, region.ym/a, h1/a, cmap='hot')
+    image = ax.imshow(h1 / region.a, interpolation="bicubic", cmap="plasma", extent=border)
+    fig.colorbar(image)
+
+    fig, ax = plt.subplots()
+    # gap at the minimal separation
+    d_min = float(trajectory_params["min_separation"])
+    g = h1 - h0 + d_min
+    # image = ax.pcolormesh(region.xm/a, region.ym/a, gap/a, cmap='hot')
+    image = ax.imshow(g / region.a, vmin=0, interpolation="bicubic", cmap="hot", extent=border)
+    fig.colorbar(image)
+
+    # Visual check before running
+    plt.show()
+    skip = input("Run simulation [Y/n]? ").lower() in ("n", "no")
+    if skip:
+        sys.exit(0)
 
 
 def run_one_trip(run, config: dict[str, dict[str, str]]):
