@@ -85,6 +85,30 @@ class FirstOrderElement:
         self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / region.dy
         # self.Dy_t = sparse.csr_matrix(self.Dy.T)
 
+    def interp_value_centroid(self, data):
+        """Map nodal values to the interpolated values at centroid."""
+        return self.K_centroid @ data
+    
+    def prop_sens_value_centroid(self, data):
+        """Propogate the sensitivity of corresponding interpolation backward."""
+        return data @ self.K_centroid
+    
+    def interp_gradient_x(self, data):
+        """Map nodal values to the interpolated gradient values, component in x."""
+        return self.Dx @ data
+    
+    def prop_sens_gradient_x(self, data):
+        """Propogate the sensitivity of corresponding interpolation backward."""
+        return data @ self.Dx
+
+    def interp_gradient_y(self, data):
+        """Map nodal values to the interpolated gradient values, component in y."""
+        return self.Dy @ data
+
+    def prop_sens_gradient_y(self, data):
+        """Propogate the sensitivity of corresponding interpolation backward."""
+        return data @ self.Dy
+
 
 def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
     """Fill cyclically, element-wise in the j-th diagonal of a matrix.
