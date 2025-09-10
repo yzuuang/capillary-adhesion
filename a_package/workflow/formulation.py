@@ -33,7 +33,7 @@ class Formulation:
 
     def get_gap(self, z1: float):
         """For the sake of post-processing."""
-        return np.clip(self.upper + z1 - self.lower, 0, None) 
+        return np.clip(self.upper + z1 - self.lower, 0, None)
 
     def update_gap(self, z1: float):
         height_diff = self.upper + z1 - self.lower
@@ -44,15 +44,17 @@ class Formulation:
         # ideal plastic contact, material interpenetration
         gap = np.clip(height_diff, 0, None)
         # map to quadrature points & match the shape as modelling expects components as the first dimension
-        self.capi.gap = np.vstack([self.fem.K_centroid @ gap])
+        self.capi.gap = np.vstack([self.fem.interp_value_centroid(gap)])
 
     def update_phase_field(self, nodal_phase: np.ndarray):
         nodal_phase = np.ravel(nodal_phase)
         # Clean the phase-field where the solid bodies contact
         nodal_phase[self.at_contact] = 0.0
         # map to quadrature points & match the shape as modelling expects components as the first dimension
-        self._quad_phase = np.vstack([self.fem.K_centroid @ nodal_phase])
-        self._quad_phase_grad = np.vstack([self.fem.Dx @ nodal_phase, self.fem.Dy @ nodal_phase])
+        self._quad_phase = np.vstack([self.fem.interp_value_centroid(nodal_phase)])
+        self._quad_phase_grad = np.vstack(
+            [self.fem.interp_gradient_x(nodal_phase), self.fem.interp_gradient_y(nodal_phase)]
+        )
 
     def validate_phase_field(self, nodal_phase: np.ndarray):
         # check phase field < 0
@@ -95,9 +97,9 @@ class Formulation:
                 self.element_area
                 * (
                     # map from quadrature points back to the nodes
-                    energy_D_phase @ self.fem.K_centroid
-                    + energy_D_phase_grad[0] @ self.fem.Dx
-                    + energy_D_phase_grad[1] @ self.fem.Dy
+                    self.fem.prop_sens_value_centroid(energy_D_phase)
+                    + self.fem.prop_sens_gradient_x(energy_D_phase_grad[0])
+                    + self.fem.prop_sens_gradient_y(energy_D_phase_grad[1])
                 ).ravel()
             )
 
@@ -112,8 +114,7 @@ class Formulation:
                 self.element_area
                 * (
                     # map from quadrature points back to the nodes
-                    volume_D_phase
-                    @ self.fem.K_centroid
+                    self.fem.prop_sens_value_centroid(volume_D_phase)
                 ).ravel()
             )
 
