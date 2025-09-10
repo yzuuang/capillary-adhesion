@@ -95,7 +95,7 @@ class Sweeps:
     def __len__(self):
         return (
             0
-            if not len(self._specs.keys())
+            if not len(self._specs)
             else functools.reduce(operator.mul, (len(vals) for vals in self._specs.values()), 1)
         )
 
