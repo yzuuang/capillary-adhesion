@@ -3,6 +3,7 @@ import sys
 import logging
 
 import matplotlib.pyplot as plt
+import matplotlib.animation as ani
 import numpy as np
 import numpy.random as random
 
@@ -24,7 +25,7 @@ from cases.configs import (
 from cases.visualise_onerun import create_overview_animation
 
 
-show_me = False
+show_me = True
 logger = logging.getLogger(__name__)
 
 
@@ -67,28 +68,51 @@ def preview_surface_and_gap(
     lower_surface_params: dict[str, str],
     trajectory_params: dict[str, str],
 ):
-    region = get_grid_specs(grid_params)
-    h1 = match_shape_and_get_height(region, upper_surface_params)
-    h0 = match_shape_and_get_height(region, lower_surface_params)
-
-    border = [0, region.nx, 0, region.ny]
-
-    fig, ax = plt.subplots()
-    # image = ax.pcolormesh(region.xm/a, region.ym/a, h1/a, cmap='hot')
-    image = ax.imshow(h1 / region.a, interpolation="bicubic", cmap="plasma", extent=border)
-    fig.colorbar(image)
-
-    fig, ax = plt.subplots()
-    # gap at the minimal separation
+    """A visual check before running simulations."""
+    # get values from params
+    grid = get_grid_specs(grid_params)
+    h1 = match_shape_and_get_height(grid, upper_surface_params)
+    h0 = match_shape_and_get_height(grid, lower_surface_params)
     d_min = float(trajectory_params["min_separation"])
-    g = h1 - h0 + d_min
-    # image = ax.pcolormesh(region.xm/a, region.ym/a, gap/a, cmap='hot')
-    image = ax.imshow(g / region.a, vmin=0, interpolation="bicubic", cmap="hot", extent=border)
-    fig.colorbar(image)
+    d_max = float(trajectory_params["max_separation"])
+    d_step = float(trajectory_params["step_size"])
+    nb_steps = round((d_max - d_min) / d_step) + 1
+    trajectory = np.linspace(d_max, d_min, nb_steps)
 
-    # Visual check before running
+    # create the figure and axes
+    fig = plt.figure(figsize=(12, 5), constrained_layout=True)
+    ax1 = fig.add_subplot(1, 2, 1, projection="3d")  # subplotkw={'projection': '3d'})
+    ax2 = fig.add_subplot(1, 2, 2)
+
+    def update_frame(i_frame: int):
+        # clear content of last frames
+        for ax in (ax1, ax2):
+            ax.clear()
+
+        # 3D surface plot of upper and lower rigid body
+        ax1.plot_surface(grid.xm, grid.ym, h0 / grid.a, cmap="berlin")
+        ax1.plot_surface(grid.xm, grid.ym, (h1 + trajectory[i_frame]) / grid.a, cmap="plasma")
+        ax1.view_init(elev=0, azim=-45)
+        ax1.set_xlabel(r"Position $x/a$")
+        ax1.set_ylabel(r"Position $y/a$")
+        ax1.set_zlabel(r"Position $z/a$")
+
+        # 2D colour map of the gap
+        h_diff = h1 - h0 + trajectory[i_frame]
+        g = np.clip(h_diff, 0, None)
+        border = [0, grid.nx, 0, grid.ny]
+        ax2.imshow(g / grid.a, vmin=0, interpolation="bicubic", cmap="hot", extent=border)
+        ax2.set_xlabel(r"Position $x/a$")
+        ax2.set_ylabel(r"Position $y/a$")
+
+        return ax1.images, ax2.images
+
+    # draw the animation
+    _ = ani.FuncAnimation(fig, update_frame, nb_steps, interval=200, repeat_delay=3000)
+
+    # allow to exit if it does not look right
     plt.show()
-    skip = input("Run simulation [Y/n]? ").lower() in ("n", "no")
+    skip = input("Run simulation [Y/n]? ").strip().lower() in ("n", "no")
     if skip:
         sys.exit(0)
 
