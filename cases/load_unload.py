@@ -99,9 +99,11 @@ def preview_surface_and_gap(
 
         # 2D colour map of the gap
         h_diff = h1 - h0 + trajectory[i_frame]
-        g = np.clip(h_diff, 0, None)
+        gap = np.clip(h_diff, 0, None)
+        contact = np.ma.masked_where(gap > 0, gap)
         border = [0, grid.nx, 0, grid.ny]
-        ax2.imshow(g / grid.a, vmin=0, interpolation="bicubic", cmap="hot", extent=border)
+        ax2.imshow(gap / grid.a, vmin=0, interpolation="nearest", cmap="hot", extent=border)
+        ax2.imshow(contact, cmap="Greys", vmin=-1, vmax=1, alpha=0.4, interpolation="nearest", extent=border)
         ax2.set_xlabel(r"Position $x/a$")
         ax2.set_ylabel(r"Position $y/a$")
 
