@@ -33,15 +33,15 @@ def main():
     config_files = sys.argv[1:]
     config = read_config_files(config_files)
 
+    # visual check
+    if show_me:
+        preview_surface_and_gap(config["Grid"], config["UpperSurface"], config["LowerSurface"], config["Trajectory"])
+
     # setup run directory
     case_name = os.path.splitext(os.path.basename(__file__))[0]
     shape_name = f'{config["UpperSurface"]["shape"]}-over-{config["LowerSurface"]["shape"]}'
     base_dir = os.path.join(case_name, shape_name)
     run = register_run(base_dir, __file__, *config_files)
-
-    # visual check
-    if show_me:
-        preview_surface_and_gap(config["Grid"], config["UpperSurface"], config["LowerSurface"], config["Trajectory"])
 
     # check if parameter sweep is specified in config
     sweep_section_prefix = "ParameterSweep"
