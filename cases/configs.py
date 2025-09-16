@@ -13,6 +13,7 @@ import operator
 from configparser import ConfigParser
 
 import numpy as np
+import numpy.random as random
 import matplotlib.pyplot as plt
 
 from a_package.modelling import Region, SelfAffineRoughness, wavevector_norm, PSD_to_height, CapillaryBridge
@@ -179,9 +180,18 @@ def _get_height_of_rough_surface(region, surface_params: dict[str, str]):
     roughness = SelfAffineRoughness(C0, qR, qS, H)
     q_2D = wavevector_norm(region.qx, region.qy)
     C_2D = roughness.mapto_psd(q_2D)
+    # get or generate the seed
+    try:
+        seed = int(surface_params["seed"])
+    except KeyError:
+        seed = None
+    seq = random.SeedSequence(seed)
+    # if seed is generated, print it out
+    if seed is None:
+        print(f"seed={seq.entropy}")
     # generate rough surface from PSD
-    seed = surface_params.get("seed", None)
-    height = PSD_to_height(C_2D, seed=seed)
+    rng = random.default_rng(seq)
+    height = PSD_to_height(C_2D, rng=rng)
     return height
 
 
