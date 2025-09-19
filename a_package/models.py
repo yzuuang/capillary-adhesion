@@ -51,7 +51,7 @@ class SelfAffineRoughness:
 
         # Evaluate accordingly
         psd = np.full_like(magnitude, np.nan)
-        psd[constant] = self.C0 * self.qR ** (2 - 2 * self.H)
+        psd[constant] = self.C0 * self.qR ** (-2 - 2 * self.H)
         psd[self_affine] = self.C0 * magnitude[self_affine] ** (-2 - 2 * self.H)
         psd[omitted] = 0
 
