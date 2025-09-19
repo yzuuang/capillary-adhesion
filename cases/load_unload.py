@@ -9,7 +9,7 @@ import numpy.random as random
 
 
 from a_package.workflow.formulation import Formulation
-from a_package.workflow.simulation import simulate_quasi_static_pull_push
+from a_package.workflow.simulation import SimulationResult, simulate_quasi_static_pull_push
 from a_package.workflow.postprocess import post_process
 from a_package.utils import working_directory, register_run, reset_logging, switch_log_file
 
@@ -154,10 +154,12 @@ def run_one_trip(run, config: dict[str, dict[str, str]]):
     with working_directory(run.results_dir, read_only=False) as store:
         # start sim with random initial guess
         phi_init = random.rand(grid.nx, grid.ny)
-        sim = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
+        sim_label = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
 
     # post-process
     with working_directory(run.results_dir, read_only=False) as store:
+        # load so that every string represented objects are also converted to objects
+        sim = store.load(sim_label, SimulationResult)
         p_sim = post_process(sim)
         store.save("final", p_sim)
 

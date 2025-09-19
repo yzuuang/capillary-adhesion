@@ -104,9 +104,7 @@ def simulate_quasi_static_pull_push(
         logger.warning(f"The following steps may have problems:\n {report}")
 
     store.save("simulation", result)
-
-    # reload so that every string represented objects are also loaded as objects
-    return store.load("simulation", SimulationResult)
+    return "simulation"
 
 
 # FIXME: sliding
