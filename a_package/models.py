@@ -40,36 +40,37 @@ class SelfAffineRoughness:
     def mapto_isotropic_psd(self, q: components_t):
         """
         Get the isotropic power spectral density (psd) of a given wavenumber
-        - q: angular wavenumber, i.e. 2 pi over wavelength
+        - q: wavenumber in radius, i.e. 2 pi over wavelength
         """
-        magnitude = la.norm(q, ord=2, axis=0, keepdims=True)
+        # isotropic, only the magnitude matters
+        wavenumber = la.norm(q, ord=2, axis=0, keepdims=True)
 
         # Find three regimes
-        constant = magnitude < self.qR
-        self_affine = (magnitude >= self.qR) & (magnitude < self.qS)
-        omitted = magnitude >= self.qS
+        constant = wavenumber < self.qR
+        self_affine = (wavenumber >= self.qR) & (wavenumber < self.qS)
+        omitted = wavenumber >= self.qS
 
         # Evaluate accordingly
-        psd = np.full_like(magnitude, np.nan)
+        psd = np.full_like(wavenumber, np.nan)
         psd[constant] = self.C0 * self.qR ** (-2 - 2 * self.H)
-        psd[self_affine] = self.C0 * magnitude[self_affine] ** (-2 - 2 * self.H)
+        psd[self_affine] = self.C0 * wavenumber[self_affine] ** (-2 - 2 * self.H)
         psd[omitted] = 0
 
         # Return both in convenience of plotting
-        return magnitude, psd
+        return wavenumber, psd
 
 
 def psd_to_height(psd: components_t, rng=None, seed=None):
     # <h^2> corresponding to <PSD>, thus, take the square-root to match overall amplitude
-    h_norm = np.sqrt(psd)
+    h_amp = np.sqrt(psd)
 
     # impose some random phase angle following uniform distribution
     if rng is None:
         rng = random.default_rng(seed)
     phase_angle = np.exp(1j * rng.uniform(0, 2 * np.pi, psd.shape))
 
-    # drop the imaginary part as that should be close to zeros
-    return fft.ifftn(h_norm * phase_angle).real
+    # only the sinusoidal is needed
+    return fft.ifft2(h_amp * phase_angle).real
 
 
 @dc.dataclass(init=True)
