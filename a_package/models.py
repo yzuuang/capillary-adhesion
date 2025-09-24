@@ -80,8 +80,6 @@ class CapillaryBridge:
     """contact angle"""
     eta: float
     """interface thickness"""
-    gap: components_t
-    """gap between two rigid bodies"""
 
     def __post_init__(self):
         self.curv = 0.5 * (abs(np.sin(self.theta)) + np.asin(np.cos(self.theta)) / np.cos(self.theta))
@@ -89,6 +87,10 @@ class CapillaryBridge:
 
         # According to Modica-Mortola's theorem
         self.perimeter_prefactor = 3.0
+
+        # To save gap heights in quadrature points
+        self.gap: components_t = None
+        """gap between two rigid bodies"""
 
     def compute_perimeter(self, phase: components_t, phase_grad: components_t):
         """
