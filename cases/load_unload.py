@@ -25,7 +25,7 @@ from cases.configs import (
 from cases.visualise_onerun import create_overview_animation
 
 
-show_me = True
+show_me_preview = False
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +35,7 @@ def main():
     config = read_config_files(config_files)
 
     # visual check
-    if show_me:
+    if show_me_preview:
         preview_surface_and_gap(config["Grid"], config["UpperSurface"], config["LowerSurface"], config["Trajectory"])
 
     # setup run directory
