@@ -75,11 +75,10 @@ def psd_to_height(psd: components_t, rng=None, seed=None):
 
 @dc.dataclass(init=True)
 class CapillaryBridge:
-
-    theta: float
-    """contact angle"""
     eta: float
     """interface thickness"""
+    theta: float
+    """contact angle"""
 
     def __post_init__(self):
         self.curv = 0.5 * (abs(np.sin(self.theta)) + np.asin(np.cos(self.theta)) / np.cos(self.theta))
