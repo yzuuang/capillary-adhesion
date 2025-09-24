@@ -44,9 +44,11 @@ class FirstOrderElement:
     Dx: np.ndarray
     Dy: np.ndarray
 
-    def __init__(self, region: Grid):
-        M = region.nx
-        N = region.ny
+    def __init__(self, grid: Grid):
+        M = grid.nx
+        N = grid.ny
+        self.nb_quad_pts = 2
+        self.grid_shape = (M, N)
         MN = M * N
 
         # K_a maps \phi grid points to central of the triangles, which are the quadrature points
@@ -71,7 +73,7 @@ class FirstOrderElement:
         fill_cyclic_diagonal_pseudo_2d(K_b_upper, (0, 1), (M, N), -1)
         fill_cyclic_diagonal_pseudo_2d(K_b_upper, (1, 1), (M, N), 1)
 
-        self.Dx = sparse.vstack([K_b_lower, K_b_upper], format="csr") / region.dx
+        self.Dx = sparse.vstack([K_b_lower, K_b_upper], format="csr") / grid.dx
         # self.Dx_t = sparse.csr_matrix(self.Dx.T)
 
         # K_c maps \phi grid points to the difference in y direction
@@ -83,32 +85,32 @@ class FirstOrderElement:
         fill_cyclic_diagonal_pseudo_2d(K_c_upper, (1, 0), (M, N), -1)
         fill_cyclic_diagonal_pseudo_2d(K_c_upper, (1, 1), (M, N), 1)
 
-        self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / region.dy
+        self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / grid.dy
         # self.Dy_t = sparse.csr_matrix(self.Dy.T)
 
-    def interp_value_centroid(self, data):
+    def interp_value_centroid(self, data: np.ndarray):
         """Map nodal values to the interpolated values at centroid."""
-        return self.K_centroid @ data
+        return (self.K_centroid @ data.ravel()).reshape(-1, self.nb_quad_pts, *self.grid_shape)
 
-    def prop_sens_value_centroid(self, data):
+    def prop_sens_value_centroid(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
-        return data @ self.K_centroid
+        return (data.ravel() @ self.K_centroid).reshape(-1, *self.grid_shape)
 
-    def interp_gradient_x(self, data):
+    def interp_gradient_x(self, data: np.ndarray):
         """Map nodal values to the interpolated gradient values, component in x."""
-        return self.Dx @ data
+        return (self.Dx @ data.ravel()).reshape(-1, self.nb_quad_pts, *self.grid_shape)
 
-    def prop_sens_gradient_x(self, data):
+    def prop_sens_gradient_x(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
-        return data @ self.Dx
+        return (data.ravel() @ self.Dx).reshape(-1, *self.grid_shape)
 
-    def interp_gradient_y(self, data):
+    def interp_gradient_y(self, data: np.ndarray):
         """Map nodal values to the interpolated gradient values, component in y."""
-        return self.Dy @ data
+        return (self.Dy @ data.ravel()).reshape(-1, self.nb_quad_pts, *self.grid_shape)
 
-    def prop_sens_gradient_y(self, data):
+    def prop_sens_gradient_y(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
-        return data @ self.Dy
+        return (data.ravel() @ self.Dy).reshape(-1, *self.grid_shape)
 
 
 def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
