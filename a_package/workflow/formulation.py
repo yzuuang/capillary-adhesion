@@ -74,6 +74,17 @@ class Formulation:
         integrand = self.capi.compute_energy(self._quad_phase, self._quad_phase_grad)
         return self.element_area * np.sum(integrand)
 
+    def get_energy_jacobian(self):
+        [energy_D_phase, energy_D_phase_grad] = self.capi.compute_energy_jacobian(
+            self._quad_phase, self._quad_phase_grad
+        )
+        return self.element_area * (
+            # map from quadrature points back to the nodes
+            self.fem.prop_sens_value_centroid(energy_D_phase)
+            + self.fem.prop_sens_gradient_x(energy_D_phase_grad[0])
+            + self.fem.prop_sens_gradient_y(energy_D_phase_grad[1])
+        )
+
     def get_volume(self):
         integrand = self.capi.compute_volume(self._quad_phase)
         return self.element_area * np.sum(integrand)
@@ -90,18 +101,7 @@ class Formulation:
 
         def objective_jacobian(x: np.ndarray):
             self.update_phase_field(x)
-            [energy_D_phase, energy_D_phase_grad] = self.capi.compute_energy_jacobian(
-                self._quad_phase, self._quad_phase_grad
-            )
-            return (
-                self.element_area
-                * (
-                    # map from quadrature points back to the nodes
-                    self.fem.prop_sens_value_centroid(energy_D_phase)
-                    + self.fem.prop_sens_gradient_x(energy_D_phase_grad[0])
-                    + self.fem.prop_sens_gradient_y(energy_D_phase_grad[1])
-                ).ravel()
-            )
+            return self.get_energy_jacobian().ravel()
 
         def constraint(x: np.ndarray):
             self.update_phase_field(x)
@@ -115,7 +115,7 @@ class Formulation:
                 * (
                     # map from quadrature points back to the nodes
                     self.fem.prop_sens_value_centroid(volume_D_phase)
-                ).ravel()
-            )
+                )
+            ).ravel()
 
         return NumOptEq(objective, objective_jacobian, constraint, constraint_jacobian)
