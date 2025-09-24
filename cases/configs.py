@@ -172,7 +172,7 @@ def _get_height_of_pattern(grid, surface_params: dict[str, str]):
 def get_capillary(capillary_params: dict[str, str]):
     theta = (np.pi / 180) * float(capillary_params["contact_angle_degree"])
     eta = float(capillary_params["interface_thickness"])
-    return CapillaryBridge(eta, theta, None)
+    return CapillaryBridge(eta, theta)
 
 
 def get_optimizer(optimzer_params: dict[str, str]):
