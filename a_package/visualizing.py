@@ -35,9 +35,11 @@ cmap_phase_field = "Blues"
 
 color_gas_phase = "w"
 color_solid_phase = "C7"
+# color_liquid_phase = "steelblue"
+# color_transition_phase = "lightskyblue"
+# color_vapour_phase = "aliceblue"
 color_liquid_phase = "steelblue"
-color_transition_phase = "lightskyblue"
-color_vapour_phase = "aliceblue"
+color_transition_phase = "lightblue"
 
 
 @dc.dataclass
@@ -58,7 +60,7 @@ class Record:
     init_guess: np.ndarray
 
 
-eps = 2e-1  # cut off value to decide one phase
+eps = 1e-2  # cut off value to decide one phase
 
 
 def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_cutoff=eps):
@@ -95,14 +97,14 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
         for section in np.split(water_phase, i_break):
             ax.fill_between(x[section], h2[section], h1[section], color=color_liquid_phase)
 
-    # highlight the vapour phase (if any)
-    phi = data.phi[idx_row, :]
-    vapour_phase = np.asarray(phi <= 0 + value_cutoff).nonzero()[0]
-    if np.size(vapour_phase):
-        i_diff = np.diff(vapour_phase, prepend=vapour_phase[0] - 1)
-        i_break = np.hstack((i_diff > 1).nonzero())
-        for section in np.split(vapour_phase, i_break):
-            ax.fill_between(x[section], h2[section], h1[section], color=color_vapour_phase)
+    # # highlight the vapour phase (if any)
+    # phi = data.phi[idx_row, :]
+    # vapour_phase = np.asarray(phi <= 0 + value_cutoff).nonzero()[0]
+    # if np.size(vapour_phase):
+    #     i_diff = np.diff(vapour_phase, prepend=vapour_phase[0] - 1)
+    #     i_break = np.hstack((i_diff > 1).nonzero())
+    #     for section in np.split(vapour_phase, i_break):
+    #         ax.fill_between(x[section], h2[section], h1[section], color=color_vapour_phase)
 
     # highlight the transition phase (if any)
     phi = data.phi[idx_row, :]
@@ -116,9 +118,10 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
     # Because the hightlight might not necessarily exist, we have to manually create the legend
     [p_solid] = ax.fill(np.nan, np.nan, color_solid_phase, label="Solid")
     [p_liquid] = ax.fill(np.nan, np.nan, color_liquid_phase, label="Liquid")
-    [p_vapour] = ax.fill(np.nan, np.nan, color_vapour_phase, label="Vapour")
+    # [p_vapour] = ax.fill(np.nan, np.nan, color_vapour_phase, label="Vapour")
     [p_interface] = ax.fill(np.nan, np.nan, color_transition_phase, label="Interface")
-    ax.legend(handles=[p_vapour, p_interface, p_liquid, p_solid], loc="upper center", ncol=2)
+    # ax.legend(handles=[p_vapour, p_interface, p_liquid, p_solid], loc="upper center", ncol=2)
+    ax.legend(handles=[p_interface, p_liquid, p_solid], loc="upper center", ncol=3)
 
     # No view margin along x-axis.
     ax.set_xlim(x[0], x[-1])
