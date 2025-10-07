@@ -52,7 +52,8 @@ class AugmentedLagrangian:
     init_penalty_weight: float
 
     def __post_init__(self):
-        # parameters related to convergence, used only by inner solver
+        # terminate if creeping is detected (in unit of machine precision)
+        # only used by inner solver
         self.tol_creeping = 1e1
         # parameters deciding how to grow the penalty weight
         self.sufficient_constr_dec = 1e-2
@@ -94,7 +95,8 @@ class AugmentedLagrangian:
 
         # initial values
         t_exec = 0
-        x_plus = x0
+        x_shape = x0.shape
+        x_plus = x0.ravel()
         lam_plus = lam0
         c_plus = self.init_penalty_weight
         is_converged = False
@@ -115,21 +117,23 @@ class AugmentedLagrangian:
             # derive augmented lagrangian
             def l(x: np.ndarray):
                 """Augmented Lagrangian."""
+                x = x.reshape(x_shape)
                 g_x = numopt.g(x)
                 return numopt.f(x) + lam * g_x + (0.5 * c) * g_x**2
 
             def l_grad(x: np.ndarray):
                 """Gradient of the Augmented Lagrangian."""
+                x = x.reshape(x_shape)
                 g_D_x = numopt.g_grad(x)
                 l_D_x = numopt.f_grad(x) + lam * g_D_x + c * numopt.g(x) * g_D_x
                 # projecting to the feasible range
-                l_D_x[(x.ravel() <= x_lb) & (l_D_x > 0)] = 0
-                l_D_x[(x.ravel() >= x_ub) & (l_D_x < 0)] = 0
-                return l_D_x
+                l_D_x[(x <= x_lb) & (l_D_x > 0)] = 0
+                l_D_x[(x >= x_ub) & (l_D_x < 0)] = 0
+                return l_D_x.ravel()
 
             # print status before calling inner solver
             obj_value = numopt.f(x)
-            norm_lagr_gradient = max(abs(l_grad(x)))
+            norm_lagr_gradient = np.max(abs(l_grad(x)))
             constr_violation = abs(numopt.g(x))
             padded_literals = [
                 f"{count:>4d}",
@@ -164,7 +168,7 @@ class AugmentedLagrangian:
             t_exec += t_exec_sub
 
             # print inner solver progress
-            res_norm_grad = max(abs(info["grad"]))
+            res_norm_grad = np.max(abs(info["grad"]))
             padded_literals = [f"{info['nit']:>4d}", f"{res_norm_grad:>8.1e}", info["task"]]
             logger.info(separator.join(padded_literals))
             logger.info("-"*50)
@@ -200,7 +204,7 @@ class AugmentedLagrangian:
         logger.info(f"Total time for inner solver: {t_exec:.1e} seconds.")
         logger.info(f"Ends with dual variable lambda={lam:.6f}")
 
-        return SolverResult(x, lam, t_exec, is_converged, reached_iter_limit, had_abnormal_stop)
+        return SolverResult(x.reshape(x_shape), lam, t_exec, is_converged, reached_iter_limit, had_abnormal_stop)
 
 
 class SolverResult(t_.NamedTuple):
