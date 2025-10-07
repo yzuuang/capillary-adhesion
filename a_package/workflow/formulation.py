@@ -44,16 +44,17 @@ class Formulation:
         # ideal plastic contact, material interpenetration
         gap = np.clip(height_diff, 0, None)
         # map to quadrature points & match the shape as modelling expects components as the first dimension
-        self.capi.gap = np.vstack([self.fem.interp_value_centroid(gap)])
+        self.capi.gap = np.stack([self.fem.interp_value_centroid(gap)], axis=0) 
 
     def update_phase_field(self, nodal_phase: np.ndarray):
         nodal_phase = np.ravel(nodal_phase)
         # Clean the phase-field where the solid bodies contact
         nodal_phase[self.at_contact] = 0.0
         # map to quadrature points & match the shape as modelling expects components as the first dimension
-        self._quad_phase = np.vstack([self.fem.interp_value_centroid(nodal_phase)])
-        self._quad_phase_grad = np.vstack(
-            [self.fem.interp_gradient_x(nodal_phase), self.fem.interp_gradient_y(nodal_phase)]
+        self._quad_phase = np.stack([self.fem.interp_value_centroid(nodal_phase)], axis=0)
+        self._quad_phase_grad = np.stack(
+            [self.fem.interp_gradient_x(nodal_phase), self.fem.interp_gradient_y(nodal_phase)],
+            axis=0
         )
 
     def validate_phase_field(self, nodal_phase: np.ndarray):
@@ -78,16 +79,34 @@ class Formulation:
         [energy_D_phase, energy_D_phase_grad] = self.capi.compute_energy_jacobian(
             self._quad_phase, self._quad_phase_grad
         )
-        return self.element_area * (
+        raw = self.element_area * (
             # map from quadrature points back to the nodes
             self.fem.prop_sens_value_centroid(energy_D_phase)
             + self.fem.prop_sens_gradient_x(energy_D_phase_grad[0])
             + self.fem.prop_sens_gradient_y(energy_D_phase_grad[1])
         )
+        shape = raw.shape
+        raw = raw.ravel()
+        raw[self.at_contact] = 0
+        return raw.reshape(shape)
 
     def get_volume(self):
         integrand = self.capi.compute_volume(self._quad_phase)
         return self.element_area * np.sum(integrand)
+
+    def get_volume_jacobian(self):
+        [volume_D_phase] = self.capi.compute_volume_jacobian(self._quad_phase)
+        raw = (
+            self.element_area
+            * (
+                # map from quadrature points back to the nodes
+                self.fem.prop_sens_value_centroid(volume_D_phase)
+            )
+        )
+        shape = raw.shape
+        raw = raw.ravel()
+        raw[self.at_contact] = 0
+        return raw.reshape(shape)
 
     def get_perimeter(self):
         integrand = self.capi.compute_perimeter(self._quad_phase, self._quad_phase_grad)
@@ -101,7 +120,7 @@ class Formulation:
 
         def objective_jacobian(x: np.ndarray):
             self.update_phase_field(x)
-            return self.get_energy_jacobian().ravel()
+            return self.get_energy_jacobian()
 
         def constraint(x: np.ndarray):
             self.update_phase_field(x)
@@ -109,13 +128,6 @@ class Formulation:
 
         def constraint_jacobian(x: np.ndarray):
             self.update_phase_field(x)
-            [volume_D_phase] = self.capi.compute_volume_jacobian(self._quad_phase)
-            return (
-                self.element_area
-                * (
-                    # map from quadrature points back to the nodes
-                    self.fem.prop_sens_value_centroid(volume_D_phase)
-                )
-            ).ravel()
+            return self.get_volume_jacobian()
 
         return NumOptEq(objective, objective_jacobian, constraint, constraint_jacobian)
