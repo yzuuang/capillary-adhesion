@@ -94,7 +94,9 @@ def _get_height_of_flat(grid, surface_params: dict[str, str]):
 
 def _get_height_of_tip(grid, surface_params: dict[str, str]):
     R = float(surface_params["radius"])
-    height = -np.sqrt(np.clip(R**2 - (grid.xm - 0.5 * grid.lx) ** 2 - (grid.ym - 0.5 * grid.ly) ** 2, 0, None))
+    x_center = 0.5 * grid.lx
+    y_center = 0.5 * grid.ly
+    height = -np.sqrt(np.clip(R**2 - (grid.xm - x_center) ** 2 - (grid.ym - y_center) ** 2, 0, None))
     # set lowest point to zero
     height += np.amax(abs(height))
     return height
