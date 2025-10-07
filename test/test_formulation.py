@@ -13,31 +13,37 @@ from a_package.workflow.formulation import Formulation
 from a_package.numeric import Grid
 
 
-show_me_plot = False
+show_me_plot = True
 
 
 def test_energy_jacobian_in_formulation():
     # Formulate the model
     a = 1.0
-    L = 10.0
-    N = 5
+    L = 4.0
+    N = 4
     grid = Grid(a, L, L, N, N)
 
     eta = 1. * a
     theta = np.pi / 3
 
     [xm, ym] = np.meshgrid(grid.x, grid.y)
-    # A ball on top and a flat plate on base
-    h1 = L * np.sqrt(1 - (xm/L - 0.5)**2 - (ym/L - 0.5)**2)
+
+    # the upper surface is spherical
+    R = 10.0
+    h1 = -np.sqrt(np.clip(R**2 - (xm - 0.5*L)**2 - (ym - 0.5*L)**2, 0, np.inf))
+    # set the minimum to zero
+    h1 = h1 - h1.min()
+    # the lower surafce is flat
     h2 = np.zeros_like(h1)
 
-    capi = CapillaryBridge(theta, eta, None)
+    capi = CapillaryBridge(theta, eta)
     fmltn = Formulation(grid, h1, h2, capi)
-    fmltn.update_gap(0.1 * a)
+    # make sure there are some areas in contact
+    fmltn.update_gap(-0.1 * a)
 
     # All the step lengths to be used for finite difference computation
     lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))  # machine precision determined
-    highest_magnitude = 1
+    highest_magnitude = 1.0
     deltas = np.pow(10.0, np.arange(lowest_magnitude, highest_magnitude))
 
     # A circular phase field for testing
