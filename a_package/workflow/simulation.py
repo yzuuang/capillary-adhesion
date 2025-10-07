@@ -61,8 +61,8 @@ def simulate_quasi_static_pull_push(
     }
 
     # simulate
-    original_shape = np.shape(phase_init.squeeze())
-    x = phase_init
+    x = np.asfortranarray(phase_init)
+    original_shape = x.shape
     lam = 0.0
     for index, delta_z in enumerate(trajectory):
         # update the parameter
@@ -89,7 +89,7 @@ def simulate_quasi_static_pull_push(
         # save the results
         store.save(
             f"simulation---steps---{index}",
-            SimulationStep([0, 0], delta_z, solver_result.time, phase, solver_result.dual),
+            SimulationStep([0, 0], delta_z, solver_result.time, phase.squeeze(), solver_result.dual),
         )
         result.steps.append(f"simulation---steps---{index}.json")
 

@@ -49,8 +49,9 @@ def post_process(res: SimulationResult):
 
     # Convert data "rows" to "columns"
     for index, step in enumerate(res.steps):
-        g.append(fmltn.get_gap(step.d))
         phi.append(step.phi)
+
+        g.append(fmltn.get_gap(step.d).squeeze())
 
         fmltn.update_gap(step.d)
         fmltn.update_phase_field(step.phi)
