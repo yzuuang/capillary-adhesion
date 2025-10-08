@@ -72,7 +72,7 @@ def simulate_quasi_static_pull_push(
 
         # solve the problem
         numopt = formulation.create_numopt_with_constant_volume(volume)
-        solver_result = minimiser.solve_minimisation(numopt, x, lam, 0, 1)
+        solver_result = minimiser.solve_minimisation(numopt, x, lam)
 
         # check flags
         if not solver_result.is_converged:

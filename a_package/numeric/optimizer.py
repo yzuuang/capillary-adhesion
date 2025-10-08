@@ -14,33 +14,30 @@ import scipy.optimize as optimize
 logger = logging.getLogger(__name__)
 
 
-class NumOptEq(t_.NamedTuple):
-    """Numerical optimization problem with equality constraints.
+class NumOptEqB(t_.Protocol):
+    """Numerical optimization problem with equality constraints and simple bounds.
 
     x* = arg min f(x)
 
-    s.t. g(x) = 0
+    s.t. g(x) = 0, x_lb <= x <= x_ub
     """
+    def get_x(self) -> np.ndarray: ...
 
-    f: t_.Callable[[np.ndarray], float]
-    """
-    def f(x: np.ndarray) -> float: ...
-    """
+    def set_x(self, x: np.ndarray): ...
 
-    f_grad: t_.Callable[[np.ndarray], np.ndarray]
-    """
-    def f_grad(x: np.ndarray) -> np.ndarray: ...
-    """
+    def get_f(self) -> float: ...
+    
+    def get_f_Dx(self) -> np.ndarray: ...
 
-    g: t_.Callable[[np.ndarray], float]
-    """
-    def g(x: np.ndarray) -> float: ...
-    """
+    def get_g(self) -> float: ...
 
-    g_grad: t_.Callable[[np.ndarray], np.ndarray]
-    """
-    def g_grad(x: np.ndarray) -> np.ndarray: ...
-    """
+    def get_g_Dx(self) -> np.ndarray: ...
+
+    @property
+    def x_lb(self) -> float: ...
+
+    @property
+    def x_ub(self) -> float: ...
 
 
 @dc.dataclass
@@ -60,7 +57,7 @@ class AugmentedLagrangian:
         self.penalty_weight_growth = 3e0
 
     def solve_minimisation(
-        self, numopt: NumOptEq, x0: np.ndarray, lam0: float = 0, x_lb: float = -np.inf, x_ub: float = +np.inf
+        self, numopt: NumOptEqB, x0: np.ndarray, lam0: float = 0
     ):
         # print headers
         nabla = "\u2207"
@@ -110,7 +107,7 @@ class AugmentedLagrangian:
 
             # update primal, dual and penalty parameter
             # for primal, clip the solution to fit within the feasible region
-            x = np.clip(x_plus, x_lb, x_ub)
+            x = np.clip(x_plus, numopt.x_lb, numopt.x_ub)
             lam = lam_plus
             c = c_plus
 
@@ -118,23 +115,25 @@ class AugmentedLagrangian:
             def l(x: np.ndarray):
                 """Augmented Lagrangian."""
                 x = x.reshape(x_shape)
-                g_x = numopt.g(x)
-                return numopt.f(x) + lam * g_x + (0.5 * c) * g_x**2
+                numopt.set_x(x)
+                g = numopt.get_g()
+                return numopt.get_f() + lam * g + (0.5 * c) * g**2
 
             def l_grad(x: np.ndarray):
                 """Gradient of the Augmented Lagrangian."""
                 x = x.reshape(x_shape)
-                g_D_x = numopt.g_grad(x)
-                l_D_x = numopt.f_grad(x) + lam * g_D_x + c * numopt.g(x) * g_D_x
+                numopt.set_x(x)
+                l_Dx = numopt.get_f_Dx() + (lam + c * numopt.get_g()) * numopt.get_g_Dx()
                 # projecting to the feasible range
-                l_D_x[(x <= x_lb) & (l_D_x > 0)] = 0
-                l_D_x[(x >= x_ub) & (l_D_x < 0)] = 0
-                return l_D_x.ravel()
+                l_Dx[(x <= numopt.x_lb) & (l_Dx > 0)] = 0
+                l_Dx[(x >= numopt.x_ub) & (l_Dx < 0)] = 0
+                return l_Dx.ravel()
 
             # print status before calling inner solver
-            obj_value = numopt.f(x)
+            numopt.set_x(x)
+            obj_value = numopt.get_f()
             norm_lagr_gradient = np.max(abs(l_grad(x)))
-            constr_violation = abs(numopt.g(x))
+            constr_violation = abs(numopt.get_g())
             padded_literals = [
                 f"{count:>4d}",
                 f"{obj_value:>8.1e}",
@@ -183,7 +182,8 @@ class AugmentedLagrangian:
                 had_abnormal_stop = True
                 break
             # else, it achieves convergence
-            constr_violation_plus = numopt.g(x_plus)
+            numopt.set_x(x_plus)
+            constr_violation_plus = numopt.get_g()
             # update Lagrangian multiplier following the formula
             lam_plus = lam + c * constr_violation_plus
             # increase penalty weight if the constraint didn't improve enough
@@ -204,7 +204,7 @@ class AugmentedLagrangian:
         logger.info(f"Total time for inner solver: {t_exec:.1e} seconds.")
         logger.info(f"Ends with dual variable lambda={lam:.6f}")
 
-        return SolverResult(x.reshape(x_shape), lam, t_exec, is_converged, reached_iter_limit, had_abnormal_stop)
+        return SolverResult(x_plus.reshape(x_shape), lam, t_exec, is_converged, reached_iter_limit, had_abnormal_stop)
 
 
 class SolverResult(t_.NamedTuple):
