@@ -4,11 +4,12 @@ modelling and computing are coupled here.
 
 import logging
 import dataclasses as dc
+import types
 
 import numpy as np
 
 from a_package.models import CapillaryBridge
-from a_package.numeric import Grid, FirstOrderElement, NumOptEq
+from a_package.numeric import Grid, FirstOrderElement
 
 
 logger = logging.getLogger(__name__)
@@ -26,8 +27,10 @@ class Formulation:
     def __post_init__(self):
         self.fem = FirstOrderElement(self.grid)
         self.element_area = 0.5 * self.grid.dx * self.grid.dy
-        self.at_contact = None
         # these values are for quadrature points
+        self.at_contact = None
+        self.nodal_phase = None
+        self._quad_gap = None
         self._quad_phase = None
         self._quad_phase_grad = None
 
@@ -46,10 +49,13 @@ class Formulation:
         # map to quadrature points & match the shape as modelling expects components as the first dimension
         self.capi.gap = np.stack([self.fem.interp_value_centroid(gap)], axis=0) 
 
+    def get_phase_field(self):
+        return self.nodal_phase
+
     def update_phase_field(self, nodal_phase: np.ndarray):
-        nodal_phase = np.ravel(nodal_phase)
+        self.nodal_phase = np.ravel(nodal_phase)
         # Clean the phase-field where the solid bodies contact
-        nodal_phase[self.at_contact] = 0.0
+        self.nodal_phase[self.at_contact] = 0.0
         # map to quadrature points & match the shape as modelling expects components as the first dimension
         self._quad_phase = np.stack([self.fem.interp_value_centroid(nodal_phase)], axis=0)
         self._quad_phase_grad = np.stack(
@@ -114,20 +120,16 @@ class Formulation:
 
     def create_numopt_with_constant_volume(self, volume: float):
 
-        def objective(x: np.ndarray):
-            self.update_phase_field(x)
-            return self.get_energy()
-
-        def objective_jacobian(x: np.ndarray):
-            self.update_phase_field(x)
-            return self.get_energy_jacobian()
-
-        def constraint(x: np.ndarray):
-            self.update_phase_field(x)
+        def volume_constraint():
             return self.get_volume() - volume
 
-        def constraint_jacobian(x: np.ndarray):
-            self.update_phase_field(x)
-            return self.get_volume_jacobian()
-
-        return NumOptEq(objective, objective_jacobian, constraint, constraint_jacobian)
+        return types.SimpleNamespace(
+            get_x=self.get_phase_field,
+            set_x=self.update_phase_field,
+            get_f=self.get_energy,
+            get_f_Dx=self.get_energy_jacobian,
+            get_g=volume_constraint,
+            get_g_Dx=self.get_volume_jacobian,
+            x_lb=0.,
+            x_ub=1.,
+        )
