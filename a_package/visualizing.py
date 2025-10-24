@@ -66,15 +66,15 @@ eps = 1e-2  # cut off value to decide one phase
 def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_cutoff=eps):
     # Get the data of the cross section at specified row index
     # FIXME: only shift in x-axis is considered.
-    h1 = np.roll(data.h1[idx_row,:], int(data.r[1]/data.grid.a))
-    h1 = (h1 + data.r[-1]) / data.grid.a
-    h2 = data.h2[idx_row,:] / data.grid.a
-    x = data.grid.locations_x / data.grid.a
+    h1 = np.roll(data.h1[idx_row,:], int(data.r[1]/min(data.grid.element_sizes)))
+    h1 = (h1 + data.r[-1]) / min(data.grid.element_sizes)
+    h2 = data.h2[idx_row,:] / min(data.grid.element_sizes)
+    x = data.grid.form_nodal_axis(0) / min(data.grid.element_sizes)
 
     # add border values due to periodic boundary condition
     h1 = np.append(h1, h1[0])
     h2 = np.append(h2, h2[0])
-    x = np.append(x, data.grid.lx/data.grid.a)
+    x = np.append(x, data.grid.lengths[0]/min(data.grid.element_sizes))
 
     # plot the two plates
     ax.plot(x, h1, "k-")
@@ -129,24 +129,24 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
 
 def plot_cross_section_phase_field(ax: plt.Axes, data: DropletData, idx_row: int):
     phi = data.phi[idx_row,:]
-    x_dimensionless = data.grid.locations_x / data.grid.a
+    x_dimensionless = data.grid.form_nodal_axis(0) / min(data.grid.element_sizes)
     ax.plot(x_dimensionless, phi, color='C0')
 
 
 def plot_height_topography(ax: plt.Axes, data: DropletData):
     # make value dimension less
-    h = data.h1 / data.grid.a
+    h = data.h1 / min(data.grid.element_sizes)
 
-    border = np.array([0, data.grid.lx, 0, data.grid.ly]) / data.grid.a
-    im = ax.imshow(h, interpolation='none', cmap=cmap_height, extent=border)
+    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
+    im = ax.imshow(h, interpolation='none', cmap=cmap_height, extent=tuple(border))
 
     return im
 
 
 def plot_gap_topography(ax: plt.Axes, data: DropletData):
     # nondimensionalize by 'eta'
-    g = data.g / data.grid.a
-    border = np.array([0, data.grid.lx, 0, data.grid.ly]) / data.grid.a
+    g = data.g / min(data.grid.element_sizes)
+    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
     
     # Set a negative 'vmin' so that the map still looks blue
     vmax = g.max()
@@ -159,18 +159,18 @@ def plot_gap_topography(ax: plt.Axes, data: DropletData):
 
 def plot_contact_topography(ax: plt.Axes, data: DropletData):
     # mask the non-contact part
-    contact = np.ma.masked_where(data.g > 0, data.g / data.grid.a)
+    contact = np.ma.masked_where(data.g > 0, data.g / min(data.grid.element_sizes))
 
     # nondimensionalize by 'eta'
-    contact = contact / data.grid.a
-    border = np.array([0, data.grid.lx, 0, data.grid.ly]) / data.grid.a
+    contact = contact / min(data.grid.element_sizes)
+    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
 
     im = ax.imshow(contact, cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4, interpolation='nearest', extent=border)
     return im
 
 
 def plot_droplet_topography(ax: plt.Axes, data: DropletData):
-    border = np.array([0, data.grid.lx, 0, data.grid.ly]) / data.grid.a
+    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
     # only use a part of the colour map, as the bluest blue is too dark
     vmin = 0
     vmax = 1.5
@@ -194,7 +194,7 @@ def plot_phase_field_topography(ax: plt.Axes, data: DropletData):
     # these values are to match the color in the "afmhot" colormap.
     # value_contact = 2.0
     # phi[g <= 0] = value_contact
-    border = np.array([0, data.grid.lx, 0, data.grid.ly]) / data.grid.a
+    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
     im = ax.imshow(phi, vmin=0, vmax=2, cmap='Blues', interpolation='nearest', extent=border)
     return im
 
@@ -204,7 +204,7 @@ def plot_interface_topography(ax: plt.Axes, data:DropletData):
     edge = sum(dphi_i**2 for dphi_i in dphi) > 1e-6
     interface = np.where(edge, data.phi, 0)
     # NOTE: hard-coded pixel size 0.1
-    border = np.array([0, data.grid.lx, 0, data.grid.ly]) / 1e-1
+    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / 1e-1
     im = ax.imshow(interface, cmap="binary", vmin=0.0, vmax=None, interpolation='nearest', extent=border)
     return im
 
@@ -239,7 +239,7 @@ def plot_gibbs_free_energy(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     G = E
 
     # Non-dimensionalize
-    a = pr.formulating.grid.a
+    a = min(pr.formulating.grid.element_sizes)
     G = G / (a**2)  # NOTE: actually needs to be divided again by 'gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
@@ -255,7 +255,7 @@ def plot_PSD(ax: plt.Axes):
     # TODO: change to sample the PSD from the height profile of a rough surface
     L = 10           # spatial dimension
     n_grid = 200     # samples in spatial domain
-    grid = Grid(L, L, n_grid, n_grid)
+    grid = Grid([L, L], [n_grid, n_grid])
 
     qR = 2e0  # roll-off
     qS = 2e1  # cut-off
@@ -264,7 +264,7 @@ def plot_PSD(ax: plt.Axes):
     roughness = SelfAffineRoughness(C0, qR, qS, H)
 
     # isotropic PSD
-    q_iso = grid.wavenumbers_x
+    q_iso = grid.form_spectral_axis(0)
     ax.loglog(fft.fftshift(q_iso), fft.fftshift(roughness.mapto_isotropic_psd(q_iso)))
     ax.axvline(abs(q_iso[q_iso.nonzero()]).min(), color="r", linestyle="--")
     ax.axvline(q_iso.max(), color="r", linestyle="--")
@@ -281,7 +281,7 @@ def plot_normal_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     f = pr.evolution.Fz[:n_step-1]
 
     # Non-dimensionalize
-    a = pr.formulating.grid.a
+    a = min(pr.formulating.grid.element_sizes)
     f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
@@ -303,7 +303,7 @@ def plot_perimeter(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
     P = pr.evolution.P[:n_step]
 
     # Non-dimensionalize
-    a = pr.formulating.grid.a
+    a = min(pr.formulating.grid.element_sizes)
 
     # Plot the x, y, z component of forces
     steps = np.arange(n_step)
@@ -346,7 +346,7 @@ def plot_force_curves(ax: plt.Axes, pr: ProcessedResult, idx_stop: int=None):
     f = pr.evolution.F[:idx_stop]
 
     # Non-dimensionalize by using 'eta'
-    a = pr.formulating.grid.a
+    a = min(pr.formulating.grid.element_sizes)
     r = la.norm(r, axis=-1)
     r = r / a
     f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
