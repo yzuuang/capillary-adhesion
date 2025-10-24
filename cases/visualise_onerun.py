@@ -54,8 +54,8 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
     axs = np.append(axs, axs_lhs)
 
     n_step = pr.evolution.nb_steps
-    idx_row = pr.formulating.grid.nx // 2
-    a = pr.formulating.grid.a
+    idx_row = pr.formulating.grid.nb_elements[0] // 2
+    a = min(pr.formulating.grid.element_sizes)
 
     # decides the view limit
     view_margin_scale = 0.05
@@ -110,7 +110,7 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
         axs[-2].set_title("Cross section")
 
         plot_combined_topography(axs[-1], get_capillary_state(pr, i_frame))
-        axs[-1].axhline(pr.formulating.grid.y[idx_row] / a, color="k")
+        axs[-1].axhline(pr.formulating.grid.form_nodal_axis(0)[idx_row] / a, color="k")
         axs[-1].set_ylabel(r"Position $y/a$")
         axs[-1].set_title("Gap & Phase")
 

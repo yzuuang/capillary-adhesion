@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 from a_package.models import CapillaryBridge
 from a_package.workflow.formulation import Formulation
-from a_package.numeric import Grid
+from a_package.grid import Grid
 
 
 show_me_plot = True
@@ -21,12 +21,12 @@ def test_energy_jacobian_in_formulation():
     a = 1.0
     L = 4.0
     N = 4
-    grid = Grid(a, L, L, N, N)
+    grid = Grid([L, L], [N, N])
 
     eta = 1. * a
     theta = np.pi / 3
 
-    [xm, ym] = np.meshgrid(grid.x, grid.y)
+    [xm, ym] = grid.form_nodal_mesh()
 
     # the upper surface is spherical
     R = 10.0

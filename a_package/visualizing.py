@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 from a_package.models import SelfAffineRoughness
-from a_package.numeric import Grid
+from a_package.grid import Grid
 from a_package.workflow.postprocess import ProcessedResult
 
 
@@ -69,7 +69,7 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
     h1 = np.roll(data.h1[idx_row,:], int(data.r[1]/data.grid.a))
     h1 = (h1 + data.r[-1]) / data.grid.a
     h2 = data.h2[idx_row,:] / data.grid.a
-    x = data.grid.x / data.grid.a
+    x = data.grid.locations_x / data.grid.a
 
     # add border values due to periodic boundary condition
     h1 = np.append(h1, h1[0])
@@ -129,7 +129,7 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
 
 def plot_cross_section_phase_field(ax: plt.Axes, data: DropletData, idx_row: int):
     phi = data.phi[idx_row,:]
-    x_dimensionless = data.grid.x / data.grid.a
+    x_dimensionless = data.grid.locations_x / data.grid.a
     ax.plot(x_dimensionless, phi, color='C0')
 
 
@@ -264,7 +264,7 @@ def plot_PSD(ax: plt.Axes):
     roughness = SelfAffineRoughness(C0, qR, qS, H)
 
     # isotropic PSD
-    q_iso = grid.qx
+    q_iso = grid.wavenumbers_x
     ax.loglog(fft.fftshift(q_iso), fft.fftshift(roughness.mapto_isotropic_psd(q_iso)))
     ax.axvline(abs(q_iso[q_iso.nonzero()]).min(), color="r", linestyle="--")
     ax.axvline(q_iso.max(), color="r", linestyle="--")

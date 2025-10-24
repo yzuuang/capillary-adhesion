@@ -12,7 +12,8 @@ import numpy as np
 import numpy.random as random
 
 from a_package.models import SelfAffineRoughness, psd_to_height, CapillaryBridge
-from a_package.numeric import Grid, AugmentedLagrangian
+from a_package.numeric import AugmentedLagrangian
+from a_package.grid import Grid
 from a_package.utils import Sweep
 
 
@@ -64,11 +65,11 @@ def get_grid_specs(grid_params: dict[str, str]):
     a = float(grid_params["pixel_size"])
     N = int(grid_params["nb_pixels"])
     L = a * N
-    grid = Grid(a, L, L, N, N)
+    grid = Grid([L, L], [N, N])
     return grid
 
 
-def match_shape_and_get_height(grid, surface_params: dict[str, str]):
+def match_shape_and_get_height(grid: Grid, surface_params: dict[str, str]):
     shape_mapping = {
         "flat": _get_height_of_flat,
         "tip": _get_height_of_tip,
@@ -86,44 +87,44 @@ def match_shape_and_get_height(grid, surface_params: dict[str, str]):
 # Though for now, thanks to numpy, the shape will be casted to match that of phase-field.
 
 
-def _get_height_of_flat(grid, surface_params: dict[str, str]):
+def _get_height_of_flat(grid: Grid, surface_params: dict[str, str]):
     constant = float(surface_params["constant"])
-    height = constant * np.ones([grid.nx, grid.ny])
+    height = constant * np.ones(grid.nb_elements)
     return height
 
 
-def _get_height_of_tip(grid, surface_params: dict[str, str]):
+def _get_height_of_tip(grid: Grid, surface_params: dict[str, str]):
     R = float(surface_params["radius"])
-    x_center = 0.5 * grid.lx
-    y_center = 0.5 * grid.ly
-    height = -np.sqrt(np.clip(R**2 - (grid.xm - x_center) ** 2 - (grid.ym - y_center) ** 2, 0, None))
+    [lx, ly] = grid.lengths
+    x_center = 0.5 * lx
+    y_center = 0.5 * ly
+    [x, y] = grid.form_nodal_mesh()
+    height = -np.sqrt(np.clip(R**2 - (x - x_center) ** 2 - (y - y_center) ** 2, 0, None))
     # set lowest point to zero
     height += np.amax(abs(height))
     return height
 
 
-def _get_height_of_sinusoid(grid, surface_params: dict[str, str]):
+def _get_height_of_sinusoid(grid: Grid, surface_params: dict[str, str]):
     wave_num = float(surface_params["wavenumber"])
     wave_amp = float(surface_params["amplitude"])
-    xm = grid.xm
-    qx = (2 * np.pi / grid.lx) * wave_num
-    ym = grid.ym
-    qy = (2 * np.pi / grid.ly) * wave_num
-    height = wave_amp * np.cos(qx * xm) * np.cos(qy * ym)
+    [x, y] = grid.form_nodal_mesh()
+    [qx, qy] = grid.form_spectral_mesh()
+    height = wave_amp * np.cos(qx * x) * np.cos(qy * y)
     return height
 
 
-def _get_height_of_rough_surface(grid, surface_params: dict[str, str]):
-    assert grid.lx == grid.ly
+def _get_height_of_rough_surface(grid: Grid, surface_params: dict[str, str]):
     # generate roughness PSD
     C0 = float(surface_params["prefactor"])
     nR = float(surface_params["rolloff_wavelength_pixels"])
-    qR = (2 * np.pi) / (grid.a * nR)  # roll-off wave vector
+    qR = (2 * np.pi) / (grid.element_sizes[0] * nR)  # roll-off wave vector
     nS = float(surface_params["cutoff_wavelength_pixels"])
-    qS = (2 * np.pi) / (grid.a * nS)  # cut-off
+    qS = (2 * np.pi) / (grid.element_sizes[0] * nS)  # cut-off
     H = float(surface_params["hurst_exponent"])
     roughness = SelfAffineRoughness(C0, qR, qS, H)
-    q_2D = np.meshgrid(grid.qx, grid.qy)
+    q_2D = grid.form_spectral_mesh()
+    # q_2D = np.expand_dims(np.stack([qx, qy], axis=0), axis=1)
     [_, C_2D] = roughness.mapto_isotropic_psd(q_2D)
     # get or generate the seed
     try:
@@ -140,9 +141,8 @@ def _get_height_of_rough_surface(grid, surface_params: dict[str, str]):
     return height.squeeze(axis=0)
 
 
-def _get_height_of_pattern(grid, surface_params: dict[str, str]):
-    xm = grid.xm
-    ym = grid.ym
+def _get_height_of_pattern(grid: Grid, surface_params: dict[str, str]):
+    [xm, ym] = grid.form_nodal_mesh()
     x0 = float(surface_params["tip_center_x"])
     y0 = float(surface_params["tip_center_y"])
 

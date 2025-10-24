@@ -10,7 +10,8 @@ import numpy as np
 
 from a_package.field import Field
 from a_package.models import CapillaryBridge
-from a_package.numeric import Grid, FirstOrderElement
+from a_package.numeric import FirstOrderElement
+from a_package.grid import Grid
 
 
 logger = logging.getLogger(__name__)
@@ -27,13 +28,15 @@ class Formulation:
 
     def __post_init__(self):
         self.fem = FirstOrderElement(self.grid)
-        self.element_area = 0.5 * self.grid.dx * self.grid.dy
+        self.element_area = 0.5 * self.grid.element_area
         # these values are for quadrature points
         self.at_contact = None
-        self.nodal_phase = None
-        self._quad_gap = None
-        self._quad_phase = None
-        self._quad_phase_grad = None
+        nb_nodes = 1
+        self.nodal_phase = np.zeros((1, nb_nodes, *self.grid.nb_elements))
+        nb_quad_pts = 2
+        self._quad_gap = np.zeros((1, nb_quad_pts, *self.grid.nb_elements))
+        self._quad_phase = np.zeros((1, nb_quad_pts, *self.grid.nb_elements))
+        self._quad_phase_grad = np.zeros((2, nb_quad_pts, *self.grid.nb_elements))
 
     def get_gap(self, z1: float):
         """For the sake of post-processing."""
@@ -131,6 +134,6 @@ class Formulation:
             get_f_Dx=self.get_energy_jacobian,
             get_g=volume_constraint,
             get_g_Dx=self.get_volume_jacobian,
-            x_lb=0.,
-            x_ub=1.,
+            x_lb=self.capi.phase_vapour,
+            x_ub=self.capi.phase_liquid,
         )

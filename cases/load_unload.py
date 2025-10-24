@@ -89,9 +89,11 @@ def preview_surface_and_gap(
         for ax in (ax1, ax2):
             ax.clear()
 
+        [xm, ym] = grid.form_nodal_mesh()
+        a = min(grid.element_sizes)
         # 3D surface plot of upper and lower rigid body
-        ax1.plot_surface(grid.xm, grid.ym, h0 / grid.a, cmap="berlin")
-        ax1.plot_surface(grid.xm, grid.ym, (h1 + trajectory[i_frame]) / grid.a, cmap="plasma")
+        ax1.plot_surface(xm, ym, h0 / a, cmap="berlin")
+        ax1.plot_surface(xm, ym, (h1 + trajectory[i_frame]) / a, cmap="plasma")
         ax1.view_init(elev=0, azim=-45)
         ax1.set_xlabel(r"Position $x/a$")
         ax1.set_ylabel(r"Position $y/a$")
@@ -101,13 +103,14 @@ def preview_surface_and_gap(
         h_diff = h1 - h0 + trajectory[i_frame]
         gap = np.clip(h_diff, 0, None)
         contact = np.ma.masked_where(gap > 0, gap)
-        border = [0, grid.nx, 0, grid.ny]
-        ax2.imshow(gap / grid.a, vmin=0, interpolation="nearest", cmap="hot", extent=border)
+        [nx, ny] = grid.nb_elements
+        border = (0, nx, 0, ny)
+        ax2.imshow(gap / a, vmin=0, interpolation="nearest", cmap="hot", extent=border)
         ax2.imshow(contact, cmap="Greys", vmin=-1, vmax=1, alpha=0.4, interpolation="nearest", extent=border)
         ax2.set_xlabel(r"Position $x/a$")
         ax2.set_ylabel(r"Position $y/a$")
 
-        return ax1.images, ax2.images
+        return *ax1.images, *ax2.images
 
     # draw the animation
     _ = ani.FuncAnimation(fig, update_frame, nb_steps, interval=200, repeat_delay=3000)
@@ -145,7 +148,7 @@ def run_one_trip(run, config: dict[str, dict[str, str]]):
     formulation = Formulation(grid, upper, lower, capi)
     z1 = np.amin(trajectory)
     formulation.update_gap(z1)
-    full_liquid = np.ones((grid.nx, grid.ny))
+    full_liquid = np.ones(grid.nb_elements)
     formulation.update_phase_field(full_liquid)
     V_percent = 0.01 * float(config["Capillary"]["liquid_volume_percent"])
     V = formulation.get_volume() * V_percent
@@ -153,7 +156,7 @@ def run_one_trip(run, config: dict[str, dict[str, str]]):
     # run simulation
     with working_directory(run.results_dir, read_only=False) as store:
         # start sim with random initial guess
-        phi_init = random.rand(grid.nx, grid.ny)
+        phi_init = random.rand(*grid.nb_elements)
         sim_label = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
 
     # post-process
