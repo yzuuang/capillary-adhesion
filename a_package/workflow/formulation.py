@@ -10,7 +10,7 @@ import numpy as np
 
 from a_package.field import Field
 from a_package.models import CapillaryBridge
-from a_package.numeric import FirstOrderElement
+from a_package.numeric.compute import FirstOrderElement
 from a_package.grid import Grid
 
 
@@ -51,7 +51,7 @@ class Formulation:
         # ideal plastic contact, material interpenetration
         gap = np.clip(height_diff, 0, None)
         # map to quadrature points & match the shape as modelling expects components as the first dimension
-        self.capi.gap = np.stack([self.fem.interp_value_centroid(gap)], axis=0) 
+        self.capi.gap = np.stack([self.fem.interpolate_value(gap)], axis=0) 
 
     def get_phase_field(self):
         return self.nodal_phase
@@ -61,11 +61,12 @@ class Formulation:
         # Clean the phase-field where the solid bodies contact
         self.nodal_phase[self.at_contact] = 0.0
         # map to quadrature points & match the shape as modelling expects components as the first dimension
-        self._quad_phase = np.stack([self.fem.interp_value_centroid(nodal_phase)], axis=0)
-        self._quad_phase_grad = np.stack(
-            [self.fem.interp_gradient_x(nodal_phase), self.fem.interp_gradient_y(nodal_phase)],
-            axis=0
-        )
+        self._quad_phase = np.stack([self.fem.interpolate_value(nodal_phase)], axis=0)
+        # self._quad_phase_grad = np.stack(
+        #     [self.fem.interpolate_gradient_x(nodal_phase), self.fem.interpolate_gradient_y(nodal_phase)],
+        #     axis=0
+        # )
+        self._quad_phase_grad = self.fem.interpolate_gradient(nodal_phase)
 
     def validate_phase_field(self, nodal_phase: Field):
         # check phase field < 0
@@ -91,9 +92,10 @@ class Formulation:
         )
         raw = self.element_area * (
             # map from quadrature points back to the nodes
-            self.fem.prop_sens_value_centroid(energy_D_phase)
-            + self.fem.prop_sens_gradient_x(energy_D_phase_grad[0])
-            + self.fem.prop_sens_gradient_y(energy_D_phase_grad[1])
+            self.fem.propag_sens_value(energy_D_phase)
+            # + self.fem.propag_sens_gradient_x(energy_D_phase_grad[0])
+            # + self.fem.propag_sens_gradient_y(energy_D_phase_grad[1])
+            + self.fem.propag_sens_gradient(energy_D_phase_grad)
         )
         shape = raw.shape
         raw = raw.ravel()
@@ -110,7 +112,7 @@ class Formulation:
             self.element_area
             * (
                 # map from quadrature points back to the nodes
-                self.fem.prop_sens_value_centroid(volume_D_phase)
+                self.fem.propag_sens_value(volume_D_phase)
             )
         )
         shape = raw.shape
