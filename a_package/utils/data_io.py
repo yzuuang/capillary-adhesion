@@ -9,8 +9,85 @@ import json
 import os
 import shutil
 import typing
+import pathlib
 
 import numpy as np
+
+from a_package.grid import Grid
+from a_package.field import Field
+
+
+class StepRecorder:
+
+    record: dict
+    step_count: int
+    npy_io: "NpyIO"
+    csv_io: "CsvIO"
+
+    def __init__(self, root_path):
+        self.step_count = 0
+        self.npy_io = NpyIO(root_path)
+        self.csv_io = CsvIO(root_path)
+
+    def reset_step_count(self):
+        self.step_count = 0
+
+    def save_new_step(self, grid: Grid, fields: dict[str, Field] = {}, scalars: dict[str, float] = {}):
+        for [name, field] in fields.items():
+            self.npy_io.save_ndarray(grid, self.combine_filename(name, self.step_count), field.squeeze())
+        for [name, scalar] in scalars.items():
+            self.csv_io.append_value(grid, f"{name}", scalar)
+        self.step_count += 1
+
+    @staticmethod
+    def combine_filename(name: str, step: int):
+        return f"{name}_step{step}"
+
+    def load_field(self, grid: Grid, name: str, step: int):
+        return self.npy_io.load_ndarray(grid, self.combine_filename(name, step))
+
+    def load_scalar_trajectory(self, grid: Grid, name: str):
+        return self.csv_io.load_array(grid, name, self.step_count)
+
+
+class NpyIO:
+
+    root_path: pathlib.Path
+
+    def __init__(self, root_path):
+        self.root_path = pathlib.Path(root_path)
+
+    def save_ndarray(self, grid: Grid, filename: str, field: Field):
+        if grid.is_in_parallel:
+            raise NotImplementedError()
+        # np.savetxt(self.root_path / f"{filename}.csv", field.squeeze(), delimiter=";")
+        np.save(self.root_path / f"{filename}.npy", field)
+
+    def load_ndarray(self, grid: Grid, filename: str):
+        if grid.is_in_parallel:
+            raise NotImplementedError()
+        # return np.loadtxt(self.root_path / f"{filename}.csv", delimiter=";")
+        return np.load(self.root_path / f"{filename}.npy")
+
+
+class CsvIO:
+
+    root_path: pathlib.Path
+
+    def __init__(self, root_path):
+        self.root_path = pathlib.Path(root_path)
+
+    def append_value(self, grid: Grid, filename: str, scalar: float):
+        if grid.is_in_parallel:
+            raise NotImplementedError()
+        with open(self.root_path / f"{filename}.csv", "a", encoding="utf-8") as fp:
+            fp.write(f"{scalar}")
+
+    def load_array(self, grid: Grid, filename: str, nb_steps: int | None=None):
+        if grid.is_in_parallel:
+            raise NotImplementedError()
+        arr = np.genfromtxt(self.root_path / f"{filename}.csv", delimiter="\n")
+        return arr[0:nb_steps]
 
 
 _dash = "---"

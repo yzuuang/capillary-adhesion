@@ -1,18 +1,20 @@
-
-import dataclasses as dc
 import logging
+import pathlib
+from dataclasses import dataclass
 
 import numpy as np
 
-from a_package.workflow.formulation import Formulation
+from a_package.grid import Grid
+from a_package.field import Field
 from a_package.numeric import AugmentedLagrangian
-from a_package.utils import FilesToReadWrite
+from a_package.workflow.formulation import Formulation
+from a_package.utils.data_io import StepRecorder
 
 
 logger = logging.getLogger(__name__)
 
 
-@dc.dataclass(init=True)
+@dataclass
 class SimulationStep:
     m: tuple[int, int]
     d: float
@@ -21,7 +23,7 @@ class SimulationStep:
     lam: float
 
 
-@dc.dataclass(init=True)
+@dataclass
 class SimulationResult:
     formulating: Formulation
     minimising: AugmentedLagrangian
@@ -29,20 +31,17 @@ class SimulationResult:
 
 
 def simulate_quasi_static_pull_push(
-    store: FilesToReadWrite,
+    store_dir: pathlib.Path | str,
     formulation: Formulation,
     minimiser: AugmentedLagrangian,
     volume: float,
     phase_init: np.ndarray,
-    trajectory: list[float],
+    trajectory: np.ndarray,
     round_trip: bool = True,
 ):
-    # save the configurations
-    store.save("simulation---formulating", formulation)
-    store.save("simulation---minimising", minimiser)
-    result = SimulationResult("simulation---formulating.json", "simulation---minimising.json", [])
 
-    trajectory = np.array(trajectory)
+    store = StepRecorder(store_dir)
+
     if round_trip:
         trajectory = np.concatenate((trajectory, np.flip(trajectory)[1:]))
     # Truncate to remove floating point errors
@@ -87,11 +86,16 @@ def simulate_quasi_static_pull_push(
         formulation.validate_phase_field(phase)
 
         # save the results
-        store.save(
-            f"simulation---steps---{index}",
-            SimulationStep([0, 0], delta_z, solver_result.time, phase.squeeze(), solver_result.dual),
+        store.save_new_step(
+            formulation.grid,
+            fields={"phase": phase, "gap": formulation.get_gap(delta_z)},
+            scalars={
+                "pressure": solver_result.dual,
+                "volume": formulation.get_volume(),
+                "perimeter": formulation.get_perimeter(),
+                "energy": formulation.get_energy(),
+            },
         )
-        result.steps.append(f"simulation---steps---{index}.json")
 
         # update next iter
         x = phase
@@ -103,8 +107,8 @@ def simulate_quasi_static_pull_push(
     else:
         logger.warning(f"The following steps may have problems:\n {report}")
 
-    store.save("simulation", result)
-    return "simulation"
+    # FIXME: need to return something?
+    return
 
 
 # FIXME: sliding

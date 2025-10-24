@@ -20,6 +20,10 @@ class Grid:
         self.element_sizes = [l / n for [l, n] in zip(self.lengths, self.nb_elements)]
         self.element_area = functools.reduce(operator.mul, self.element_sizes, 1.)
 
+    @property
+    def is_in_parallel(self) -> bool:
+        return False
+
     def form_index_axis(self, ax_index: int):
         return np.arange(self.nb_elements[ax_index])
 
