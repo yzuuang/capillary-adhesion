@@ -1,8 +1,8 @@
-
 import numpy as np
 import scipy.sparse as sparse
 
 from a_package.grid import Grid
+
 
 class FirstOrderElement:
     """
@@ -14,76 +14,98 @@ class FirstOrderElement:
     It combines interpolation and quadrature.
     """
 
-    K_centroid: np.ndarray
-    Dx: np.ndarray
-    Dy: np.ndarray
-
     def __init__(self, grid: Grid):
+        self.grid_shape = grid.nb_elements
+        sub_pt_coords = np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]])
+        self.nb_sub_pts = sub_pt_coords.shape[0]
+
+        fe_pixel = LinearFiniteElementPixel()
+        val_interp_coeffs = fe_pixel.compute_value_interpolation_coefficients(sub_pt_coords)
+        grad_interp_coeffs = fe_pixel.compute_gradient_interpolation_coefficients(sub_pt_coords)
+
         [M, N] = grid.nb_elements
-        self.nb_quad_pts = 2
-        self.grid_shape = (M, N)
         MN = M * N
 
-        # K_a maps \phi grid points to central of the triangles, which are the quadrature points
-        K_a_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_pseudo_2d(K_a_lower, (0, 0), (M, N), 1 / 3)
-        fill_cyclic_diagonal_pseudo_2d(K_a_lower, (0, 1), (M, N), 1 / 3)
-        fill_cyclic_diagonal_pseudo_2d(K_a_lower, (1, 0), (M, N), 1 / 3)
+        # mapping nodal value to the value at target points
+        # matrix_val_0 = sparse.lil_matrix((MN, MN), dtype=float)
+        # for [i_pt, coeff] in val_interp_coeffs[0].items():
+        #     fill_cyclic_diagonal_pseudo_2d(matrix_val_0, i_pt, (M, N), coeff)
+        # matrix_val_1 = sparse.lil_matrix((MN, MN), dtype=float)
+        # for [i_pt, coeff] in val_interp_coeffs[1].items():
+        #     fill_cyclic_diagonal_pseudo_2d(matrix_val_0, i_pt, (M, N), coeff)
+        # self.matrix_val = sparse.vstack([matrix_val_0, matrix_val_1], format="csr")
+        blocks = []
+        for sub_pt_coeffs in val_interp_coeffs:
+            sub_pt_matrix = sparse.lil_matrix((MN, MN), dtype=float)
+            for [i_pt, coeff] in sub_pt_coeffs.items():
+                fill_cyclic_diagonal_pseudo_2d(sub_pt_matrix, i_pt, (M, N), coeff)
+            blocks.append(sub_pt_matrix)
+        self.matrix_val = sparse.vstack(blocks, format="csr")
 
-        K_a_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_pseudo_2d(K_a_upper, (0, 1), (M, N), 1 / 3)
-        fill_cyclic_diagonal_pseudo_2d(K_a_upper, (1, 0), (M, N), 1 / 3)
-        fill_cyclic_diagonal_pseudo_2d(K_a_upper, (1, 1), (M, N), 1 / 3)
+        # # mapping nodal value to the gradient x component at target points
+        # matrix_grad_0_x = sparse.lil_matrix((MN, MN), dtype=float)
+        # for [i_pt, coeff] in grad_interp_coeffs[0]["x"].items():
+        #     fill_cyclic_diagonal_pseudo_2d(matrix_grad_0_x, i_pt, (M, N), coeff)
+        # matrix_grad_1_x = sparse.lil_matrix((MN, MN), dtype=float)
+        # for [i_pt, coeff] in grad_interp_coeffs[1]["x"].items():
+        #     fill_cyclic_diagonal_pseudo_2d(matrix_grad_1_x, i_pt, (M, N), coeff)
+        # self.matrix_Dx = sparse.vstack([matrix_grad_0_x, matrix_grad_1_x], format="csr") / grid.element_sizes[0]
 
-        self.K_centroid = sparse.vstack([K_a_lower, K_a_upper], format="csr")
+        # # mapping nodal value to the gradient y component at target points
+        # matrix_grad_0_y = sparse.lil_matrix((MN, MN), dtype=float)
+        # for [i_pt, coeff] in grad_interp_coeffs[0]["y"].items():
+        #     fill_cyclic_diagonal_pseudo_2d(matrix_grad_0_y, i_pt, (M, N), coeff)
+        # matrix_grad_1_y = sparse.lil_matrix((MN, MN), dtype=float)
+        # for [i_pt, coeff] in grad_interp_coeffs[1]["y"].items():
+        #     fill_cyclic_diagonal_pseudo_2d(matrix_grad_1_y, i_pt, (M, N), coeff)
+        # self.matrix_Dy = sparse.vstack([matrix_grad_0_y, matrix_grad_1_y], format="csr") / grid.element_sizes[1]
 
-        # K_b maps \phi grid points to the difference in x direction
-        K_b_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_pseudo_2d(K_b_lower, (0, 0), (M, N), -1)
-        fill_cyclic_diagonal_pseudo_2d(K_b_lower, (1, 0), (M, N), 1)
+        # mapping nodal value to the gradient at target points
+        blocks = []
+        for sub_pt_coeffs in grad_interp_coeffs:
+            # x component
+            sub_pt_matrix = sparse.lil_matrix((MN, MN), dtype=float)
+            for [i_pt, coeff] in sub_pt_coeffs['x'].items():
+                fill_cyclic_diagonal_pseudo_2d(sub_pt_matrix, i_pt, (M, N), coeff)
+            blocks.append(sub_pt_matrix / grid.element_sizes[0])
+            # y component
+            sub_pt_matrix = sparse.lil_matrix((MN, MN), dtype=float)
+            for [i_pt, coeff] in sub_pt_coeffs['y'].items():
+                fill_cyclic_diagonal_pseudo_2d(sub_pt_matrix, i_pt, (M, N), coeff)
+            blocks.append(sub_pt_matrix / grid.element_sizes[1])
+        self.matrix_grad = sparse.vstack(blocks, format="csr")
 
-        K_b_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_pseudo_2d(K_b_upper, (0, 1), (M, N), -1)
-        fill_cyclic_diagonal_pseudo_2d(K_b_upper, (1, 1), (M, N), 1)
-
-        self.Dx = sparse.vstack([K_b_lower, K_b_upper], format="csr") / grid.element_sizes[0]
-        # self.Dx_t = sparse.csr_matrix(self.Dx.T)
-
-        # K_c maps \phi grid points to the difference in y direction
-        K_c_lower = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_pseudo_2d(K_c_lower, (0, 0), (M, N), -1)
-        fill_cyclic_diagonal_pseudo_2d(K_c_lower, (0, 1), (M, N), 1)
-
-        K_c_upper = sparse.lil_matrix((MN, MN), dtype=float)
-        fill_cyclic_diagonal_pseudo_2d(K_c_upper, (1, 0), (M, N), -1)
-        fill_cyclic_diagonal_pseudo_2d(K_c_upper, (1, 1), (M, N), 1)
-
-        self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / grid.element_sizes[1]
-        # self.Dy_t = sparse.csr_matrix(self.Dy.T)
-
-    def interp_value_centroid(self, data: np.ndarray):
+    def interpolate_value(self, data: np.ndarray):
         """Map nodal values to the interpolated values at centroid."""
-        return (self.K_centroid @ data.ravel()).reshape(-1, self.nb_quad_pts, *self.grid_shape)
+        return (self.matrix_val @ data.ravel()).reshape(-1, self.nb_sub_pts, *self.grid_shape)
 
-    def prop_sens_value_centroid(self, data: np.ndarray):
+    def propag_sens_value(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
-        return (data.ravel() @ self.K_centroid).reshape(-1, *self.grid_shape)
+        return (data.ravel() @ self.matrix_val).reshape(-1, *self.grid_shape)
 
-    def interp_gradient_x(self, data: np.ndarray):
+    # def interpolate_gradient_x(self, data: np.ndarray):
+    #     """Map nodal values to the interpolated gradient values, component in x."""
+    #     return (self.matrix_Dx @ data.ravel()).reshape(-1, self.nb_sub_pts, *self.grid_shape)
+
+    # def propag_sens_gradient_x(self, data: np.ndarray):
+    #     """Propogate the sensitivity of corresponding interpolation backward."""
+    #     return (data.ravel() @ self.matrix_Dx).reshape(-1, *self.grid_shape)
+
+    # def interpolate_gradient_y(self, data: np.ndarray):
+    #     """Map nodal values to the interpolated gradient values, component in y."""
+    #     return (self.matrix_Dy @ data.ravel()).reshape(-1, self.nb_sub_pts, *self.grid_shape)
+
+    # def propag_sens_gradient_y(self, data: np.ndarray):
+    #     """Propogate the sensitivity of corresponding interpolation backward."""
+    #     return (data.ravel() @ self.matrix_Dy).reshape(-1, *self.grid_shape)
+
+    def interpolate_gradient(self, data: np.ndarray):
         """Map nodal values to the interpolated gradient values, component in x."""
-        return (self.Dx @ data.ravel()).reshape(-1, self.nb_quad_pts, *self.grid_shape)
+        return (self.matrix_grad @ data.ravel()).reshape(-1, self.nb_sub_pts, *self.grid_shape)
 
-    def prop_sens_gradient_x(self, data: np.ndarray):
+    def propag_sens_gradient(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
-        return (data.ravel() @ self.Dx).reshape(-1, *self.grid_shape)
-
-    def interp_gradient_y(self, data: np.ndarray):
-        """Map nodal values to the interpolated gradient values, component in y."""
-        return (self.Dy @ data.ravel()).reshape(-1, self.nb_quad_pts, *self.grid_shape)
-
-    def prop_sens_gradient_y(self, data: np.ndarray):
-        """Propogate the sensitivity of corresponding interpolation backward."""
-        return (data.ravel() @ self.Dy).reshape(-1, *self.grid_shape)
+        return (data.ravel() @ self.matrix_grad).reshape(-1, *self.grid_shape)
 
 
 def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
@@ -95,7 +117,9 @@ def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
     mat[i, (i + j) % N] = val
 
 
-def fill_cyclic_diagonal_pseudo_2d(mat: sparse.spmatrix, j: tuple[int, int], N: tuple[int, int], val: float, row_maj: bool=True):
+def fill_cyclic_diagonal_pseudo_2d(
+    mat: sparse.spmatrix, j: tuple[int, int], N: tuple[int, int], val: float, row_maj: bool = True
+):
     """Fill cyclically, element-wise in the j-th diagonal of a matrix.
     The matrix represents a mapping from 2D data to 2D data.
     However, the 2D data is ravelled and represented as a 1D array.
@@ -125,3 +149,95 @@ def fill_vertical_block_diagonal(mat: sparse.spmatrix, N: int, val: list[float])
     m = len(val)
     for i in range(N):
         mat[m * i : m * (i + 1), i] = val
+
+
+class LinearFiniteElementPixel:
+    """A unit pixel discretized with linear (first order) finite element basis. It provides discrete operators
+    for interpolation and gradient on pre-specified locations.
+    (0,0) ---- (1,0)
+      |     /   |
+      | 0  /  1 |
+      |   /     |
+    (0,1) ---- (1,1)
+    The vertices of the pixel are (0,0), (1,0), (0,1), (1,1). It is divided into two triangles by
+    the line connecting vertices (1,0) and (0,1), x_1 + x_2 = 1. The triangle with (0,0) vertice is
+    the "lower triangle", the other is the "upper triangle".
+    """
+
+    def compute_value_interpolation_coefficients(self, target_pts):
+        # enforce range
+        assert np.all(target_pts >= 0) and np.all(target_pts <= 1)
+
+        # nb_sub_pts = np.size(target_pts, axis=0)
+        # res = np.empty([1, nb_sub_pts, 2, 2])
+        # for i, (x1, x2) in enumerate(target_pts):
+        #     if x1 + x2 < 1:
+        #         # Lower triangle
+        #         res[:, i] = self.triangle0_shape_function(x1, x2)
+        #     else:
+        #         # Upper triangle
+        #         res[:, i] = self.triangle1_shape_function(x1, x2)
+        # return res
+        res = []
+        for [x1, x2] in target_pts:
+            if x1 + x2 < 1:
+                res.append(self.triangle0_shape_function(x1, x2))
+            else:
+                res.append(self.triangle1_shape_function(x1, x2))
+        return res
+
+    @staticmethod
+    def triangle0_shape_function(x1, x2):
+        # return [
+        #     [1 - x1 - x2, x2],
+        #     [x1, 0],
+        # ]
+        return {(0, 0): 1 - x1 - x2, (1, 0): x1, (0, 1): x2}
+
+    @staticmethod
+    def triangle1_shape_function(x1, x2):
+        # return [
+        #     [0, 1 - x1],
+        #     [1 - x2, x1 + x2 - 1],
+        # ]
+        return {(1, 1): x1 + x2 - 1, (1, 0): 1 - x1, (0, 1): 1 - x2}
+
+    def compute_gradient_interpolation_coefficients(self, target_pts):
+        # check points are inside a unit pixel
+        assert np.all(target_pts >= 0) and np.all(target_pts <= 1)
+
+        res = []
+        for [x1, x2] in target_pts:
+            if x1 + x2 < 1:
+                res.append(self.triangle0_shape_function_gradient(x1, x2))
+            else:
+                res.append(self.triangle1_shape_function_gradient(x1, x2))
+        return res
+
+    @staticmethod
+    def triangle0_shape_function_gradient(x1, x2):
+        # return [
+        #     [
+        #         [-1, 0],
+        #         [1, 0],
+        #     ],
+        #     [
+        #         [-1, 1],
+        #         [0, 0],
+        #     ],
+        # ]
+        return {"x": {(0, 0): -1.0, (1, 0): 1.0}, "y": {(0, 0): -1.0, (0, 1): 1.0}}
+
+    @staticmethod
+    def triangle1_shape_function_gradient(x1, x2):
+        # return [
+        #     [
+        #         [0, -1],
+        #         [0, 1],
+        #     ],
+        #     [
+        #         [0, 0],
+        #         [-1, 1],
+        #     ],
+        # ]
+        return {"x": {(0, 1): -1.0, (1, 1): 1.0}, "y": {(1, 0): -1.0, (1, 1): 1.0}}
