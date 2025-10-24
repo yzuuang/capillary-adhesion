@@ -10,7 +10,8 @@ import numpy as np
 
 from a_package.field import Field
 from a_package.models import CapillaryBridge
-from a_package.numeric.compute import FirstOrderElement
+from a_package.numeric.fem import FirstOrderElement
+from a_package.numeric.quadrature import centroid_gaussian_quadrature
 from a_package.grid import Grid
 
 
@@ -27,8 +28,8 @@ class Formulation:
     capi: CapillaryBridge
 
     def __post_init__(self):
-        self.fem = FirstOrderElement(self.grid)
-        self.element_area = 0.5 * self.grid.element_area
+        self.quadrature = centroid_gaussian_quadrature
+        self.fem = FirstOrderElement(self.grid, self.quadrature.quad_pt_coords)
         # these values are for quadrature points
         self.at_contact = None
         nb_nodes = 1
@@ -51,7 +52,7 @@ class Formulation:
         # ideal plastic contact, material interpenetration
         gap = np.clip(height_diff, 0, None)
         # map to quadrature points & match the shape as modelling expects components as the first dimension
-        self.capi.gap = np.stack([self.fem.interpolate_value(gap)], axis=0) 
+        self.capi.gap = self.fem.interpolate_value(gap)
 
     def get_phase_field(self):
         return self.nodal_phase
@@ -61,7 +62,7 @@ class Formulation:
         # Clean the phase-field where the solid bodies contact
         self.nodal_phase[self.at_contact] = 0.0
         # map to quadrature points & match the shape as modelling expects components as the first dimension
-        self._quad_phase = np.stack([self.fem.interpolate_value(nodal_phase)], axis=0)
+        self._quad_phase = self.fem.interpolate_value(nodal_phase)
         # self._quad_phase_grad = np.stack(
         #     [self.fem.interpolate_gradient_x(nodal_phase), self.fem.interpolate_gradient_y(nodal_phase)],
         #     axis=0
@@ -84,18 +85,17 @@ class Formulation:
 
     def get_energy(self):
         integrand = self.capi.compute_energy(self._quad_phase, self._quad_phase_grad)
-        return self.element_area * np.sum(integrand)
+        return self.quadrature.integrate(self.grid, integrand).item()
 
     def get_energy_jacobian(self):
         [energy_D_phase, energy_D_phase_grad] = self.capi.compute_energy_jacobian(
             self._quad_phase, self._quad_phase_grad
         )
-        raw = self.element_area * (
-            # map from quadrature points back to the nodes
-            self.fem.propag_sens_value(energy_D_phase)
+        raw = (
+            self.fem.propag_sens_value(self.quadrature.propag_integral_weight(self.grid, energy_D_phase))
             # + self.fem.propag_sens_gradient_x(energy_D_phase_grad[0])
             # + self.fem.propag_sens_gradient_y(energy_D_phase_grad[1])
-            + self.fem.propag_sens_gradient(energy_D_phase_grad)
+            + self.fem.propag_sens_gradient(self.quadrature.propag_integral_weight(self.grid, energy_D_phase_grad))
         )
         shape = raw.shape
         raw = raw.ravel()
@@ -104,17 +104,11 @@ class Formulation:
 
     def get_volume(self):
         integrand = self.capi.compute_volume(self._quad_phase)
-        return self.element_area * np.sum(integrand)
+        return self.quadrature.integrate(self.grid, integrand).item()
 
     def get_volume_jacobian(self):
         [volume_D_phase] = self.capi.compute_volume_jacobian(self._quad_phase)
-        raw = (
-            self.element_area
-            * (
-                # map from quadrature points back to the nodes
-                self.fem.propag_sens_value(volume_D_phase)
-            )
-        )
+        raw = self.fem.propag_sens_value(self.quadrature.propag_integral_weight(self.grid, volume_D_phase))
         shape = raw.shape
         raw = raw.ravel()
         raw[self.at_contact] = 0
@@ -122,7 +116,7 @@ class Formulation:
 
     def get_perimeter(self):
         integrand = self.capi.compute_perimeter(self._quad_phase, self._quad_phase_grad)
-        return self.element_area * np.sum(integrand)
+        return self.quadrature.integrate(self.grid, integrand).item()
 
     def create_numopt_with_constant_volume(self, volume: float):
 
