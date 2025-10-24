@@ -72,11 +72,18 @@ class CapillaryBridge:
     """contact angle"""
 
     def __post_init__(self):
+        # convention
+        self.phase_vapour = 0.
+        self.phase_liquid = 1.
+        # According to Modica-Mortola's theorem, the perimeter of liquid-vapour interface is propotional to its energy.
+        # That propotion equals to the integral of the square root of the double-well penalty, on the interval connected
+        # by two phases. Therefore, we have to set a prefactor equal to the inverse of that propotion, then that value
+        # would exactly be the perimeter
+        self.perimeter_prefactor = 3.
+
+        # more parameters
         self.curv = 0.5 * (abs(np.sin(self.theta)) + np.asin(np.cos(self.theta)) / np.cos(self.theta))
         self.gamma = -np.cos(self.theta)
-
-        # According to Modica-Mortola's theorem
-        self.perimeter_prefactor = 3.0
 
         # To save gap heights in quadrature points
         self.gap: Field = None

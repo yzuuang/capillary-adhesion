@@ -1,34 +1,8 @@
-import dataclasses as dc
 
 import numpy as np
-import numpy.fft as fft
 import scipy.sparse as sparse
 
-# FIXME: interpolate the solid surface for sliding
-# from SurfaceTopography.Uniform.Interpolation import Bicubic
-
-
-@dc.dataclass
-class Grid:
-    """A discrete space in 2D."""
-
-    a: float
-    lx: float
-    ly: float
-    nx: int
-    ny: int
-
-    def __post_init__(self):
-        self.dx = self.a
-        self.x = np.arange(self.nx) * self.dx
-        self.qx = (2 * np.pi) * fft.fftfreq(self.nx, self.dx)
-
-        self.dy = self.a
-        self.y = np.arange(self.ny) * self.dy
-        self.qy = (2 * np.pi) * fft.fftfreq(self.ny, self.dy)
-
-        self.xm, self.ym = np.meshgrid(self.x, self.y)
-
+from a_package.grid import Grid
 
 class FirstOrderElement:
     """
@@ -45,8 +19,7 @@ class FirstOrderElement:
     Dy: np.ndarray
 
     def __init__(self, grid: Grid):
-        M = grid.nx
-        N = grid.ny
+        [M, N] = grid.nb_elements
         self.nb_quad_pts = 2
         self.grid_shape = (M, N)
         MN = M * N
@@ -73,7 +46,7 @@ class FirstOrderElement:
         fill_cyclic_diagonal_pseudo_2d(K_b_upper, (0, 1), (M, N), -1)
         fill_cyclic_diagonal_pseudo_2d(K_b_upper, (1, 1), (M, N), 1)
 
-        self.Dx = sparse.vstack([K_b_lower, K_b_upper], format="csr") / grid.dx
+        self.Dx = sparse.vstack([K_b_lower, K_b_upper], format="csr") / grid.element_sizes[0]
         # self.Dx_t = sparse.csr_matrix(self.Dx.T)
 
         # K_c maps \phi grid points to the difference in y direction
@@ -85,7 +58,7 @@ class FirstOrderElement:
         fill_cyclic_diagonal_pseudo_2d(K_c_upper, (1, 0), (M, N), -1)
         fill_cyclic_diagonal_pseudo_2d(K_c_upper, (1, 1), (M, N), 1)
 
-        self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / grid.dy
+        self.Dy = sparse.vstack([K_c_lower, K_c_upper], format="csr") / grid.element_sizes[1]
         # self.Dy_t = sparse.csr_matrix(self.Dy.T)
 
     def interp_value_centroid(self, data: np.ndarray):
