@@ -2,36 +2,54 @@
 Solving the numerical optimization problem. No physics meaning in this file.
 """
 
-import dataclasses as dc
+import types
 import logging
 import timeit
-import typing as t_
+import typing
+from dataclasses import dataclass
 
 import numpy as np
-import scipy.optimize as optimize
+import scipy.optimize
 
 
 logger = logging.getLogger(__name__)
 
 
-class NumOptEqB(t_.Protocol):
-    """Numerical optimization problem with equality constraints and simple bounds.
+class NumOpt(typing.Protocol):
+    """Numerical optimization problem, unconstrained.
 
     x* = arg min f(x)
-
-    s.t. g(x) = 0, x_lb <= x <= x_ub
     """
+
     def get_x(self) -> np.ndarray: ...
 
     def set_x(self, x: np.ndarray): ...
 
     def get_f(self) -> float: ...
-    
+
     def get_f_Dx(self) -> np.ndarray: ...
+
+
+class NumOptEq(NumOpt, typing.Protocol):
+    """Numerical optimization problem with equality constraints.
+
+    x* = arg min f(x)
+
+    s.t. g(x) == 0
+    """
 
     def get_g(self) -> float: ...
 
     def get_g_Dx(self) -> np.ndarray: ...
+
+
+class NumOptB(NumOpt, typing.Protocol):
+    """Numerical optimization problem with simple bounds.
+
+    x* = arg min f(x)
+
+    s.t. x_lb <= x <= x_ub
+    """
 
     @property
     def x_lb(self) -> float: ...
@@ -40,7 +58,16 @@ class NumOptEqB(t_.Protocol):
     def x_ub(self) -> float: ...
 
 
-@dc.dataclass
+class NumOptEqB(NumOptEq, NumOptB, typing.Protocol):
+    """Numerical optimization problem with equality constraints and simple bounds.
+
+    x* = arg min f(x)
+
+    s.t. g(x) == 0, x_lb <= x <= x_ub
+    """
+
+
+@dataclass
 class AugmentedLagrangian:
     max_inner_iter: int
     max_outer_loop: int
@@ -56,20 +83,11 @@ class AugmentedLagrangian:
         self.sufficient_constr_dec = 1e-2
         self.penalty_weight_growth = 3e0
 
-    def solve_minimisation(
-        self, numopt: NumOptEqB, x0: np.ndarray, lam0: float = 0
-    ):
+    def solve_minimisation(self, numopt: NumOptEqB, x0: np.ndarray, lam0: float):
         # print headers
         nabla = "\u2207"
         delta = "\u0394"
-        tabel_headers_line1 = [
-            "Loop",
-            "f",
-            f"|Pr({nabla}L)|",
-            "|g|",
-            f"|{delta} lam|",
-            "c"
-        ]
+        tabel_headers_line1 = ["Loop", "f", f"|Pr({nabla}L)|", "|g|", f"|{delta} lam|", "c"]
         tabel_headers_line2 = [
             "Iter",
             f"|res {nabla}|",
@@ -88,7 +106,7 @@ class AugmentedLagrangian:
                 for col_name in tabel_headers_line2
             )
         )
-        logger.info("="*50)
+        logger.info("=" * 50)
 
         # initial values
         t_exec = 0
@@ -101,39 +119,29 @@ class AugmentedLagrangian:
         had_abnormal_stop = False
         lam = lam0  # only for the purpose of printing delta-lam at count=0
 
+        # Loop of augmented lagrangian
         for count in range(self.max_outer_loop):
             # compute values that must be evaluated before update
             norm_delta_lam = abs(lam_plus - lam)
 
             # update primal, dual and penalty parameter
             # for primal, clip the solution to fit within the feasible region
-            x = np.clip(x_plus, numopt.x_lb, numopt.x_ub)
+            # x = np.clip(x_plus, numopt.x_lb, numopt.x_ub)
+            x = x_plus
             lam = lam_plus
             c = c_plus
 
-            # derive augmented lagrangian
-            def l(x: np.ndarray):
-                """Augmented Lagrangian."""
-                x = x.reshape(x_shape)
-                numopt.set_x(x)
-                g = numopt.get_g()
-                return numopt.get_f() + lam * g + (0.5 * c) * g**2
-
-            def l_grad(x: np.ndarray):
-                """Gradient of the Augmented Lagrangian."""
-                x = x.reshape(x_shape)
-                numopt.set_x(x)
-                l_Dx = numopt.get_f_Dx() + (lam + c * numopt.get_g()) * numopt.get_g_Dx()
-                # projecting to the feasible range
-                l_Dx[(x <= numopt.x_lb) & (l_Dx > 0)] = 0
-                l_Dx[(x >= numopt.x_ub) & (l_Dx < 0)] = 0
-                return l_Dx.ravel()
+            # get the reformulated / approximated unconstrained problem
+            reformed = self.reform_simple_bounds_with_clipping(
+                self.approximate_equality_constraint_with_augmented_lagrangian(numopt, lam, c)
+            )
 
             # print status before calling inner solver
             numopt.set_x(x)
             obj_value = numopt.get_f()
-            norm_lagr_gradient = np.max(abs(l_grad(x)))
             constr_violation = abs(numopt.get_g())
+            reformed.set_x(x)
+            norm_lagr_gradient = np.max(abs(reformed.get_f_Dx()))
             padded_literals = [
                 f"{count:>4d}",
                 f"{obj_value:>8.1e}",
@@ -152,17 +160,7 @@ class AugmentedLagrangian:
 
             # solve minimisation of augmented lagrangian
             t_exec_sub = -timeit.default_timer()
-            [x_plus, _, info] = optimize.fmin_l_bfgs_b(
-                l,
-                x,  # old solution as new initial guess
-                fprime=l_grad,
-                # relative decreasing of `f`, in units of `eps`; if set it to 0,
-                # the test will stop the algorithm only if the objective function remains unchanged after one iteration
-                factr=self.tol_creeping,
-                # this `pg` should be zero at exactly a local minimizer
-                pgtol=self.tol_convergence,
-                maxiter=self.max_inner_iter,
-            )
+            [x_plus, _, info] = self.solve_unconstrained(reformed, x_plus, x_shape)
             t_exec_sub += timeit.default_timer()
             t_exec += t_exec_sub
 
@@ -170,7 +168,7 @@ class AugmentedLagrangian:
             res_norm_grad = np.max(abs(info["grad"]))
             padded_literals = [f"{info['nit']:>4d}", f"{res_norm_grad:>8.1e}", info["task"]]
             logger.info(separator.join(padded_literals))
-            logger.info("-"*50)
+            logger.info("-" * 50)
 
             # if reaches maximal iterations, simply do another loop to run more iterations
             # only the "x" is updated
@@ -204,10 +202,90 @@ class AugmentedLagrangian:
         logger.info(f"Total time for inner solver: {t_exec:.1e} seconds.")
         logger.info(f"Ends with dual variable lambda={lam:.6f}")
 
-        return SolverResult(x_plus.reshape(x_shape), lam, t_exec, is_converged, reached_iter_limit, had_abnormal_stop)
+        return SolverResult(reformed.get_x(), lam, t_exec, is_converged, reached_iter_limit, had_abnormal_stop)
+
+    @staticmethod
+    def approximate_equality_constraint_with_augmented_lagrangian(num_opt: NumOptEq, lam: float, c: float):
+
+        def get_augmented_lagrangian():
+            g = num_opt.get_g()
+            return num_opt.get_f() + lam * g + (0.5 * c) * g**2
+
+        def get_augmented_lagrangian_Dx():
+            return num_opt.get_f_Dx() + (lam + c * num_opt.get_g()) * num_opt.get_g_Dx()
+
+        reformed = {
+            "get_x": num_opt.get_x,
+            "set_x": num_opt.set_x,
+            "get_f": get_augmented_lagrangian,
+            "get_f_Dx": get_augmented_lagrangian_Dx,
+        }
+        try:
+            reformed.update({"x_lb": num_opt.x_lb, "x_ub": num_opt.x_ub})
+        except AttributeError:
+            pass
+
+        return types.SimpleNamespace(**reformed)
+
+    @staticmethod
+    def reform_simple_bounds_with_clipping(num_opt: NumOptB):
+
+        def set_x_clipped(x: np.ndarray):
+            num_opt.set_x(np.clip(x, num_opt.x_lb, num_opt.x_ub))
+
+        def get_f_Dx_masked():
+            f_Dx = num_opt.get_f_Dx().ravel()
+            x = num_opt.get_x()
+            # Trick the solver to think those points are at the minimum so it doesn't go
+            # further towards the infeasible zone. The clipping in the setter will then
+            # ensure the feasibility.
+            f_Dx[(x <= num_opt.x_lb) & (f_Dx > 0)] = 0
+            f_Dx[(x >= num_opt.x_ub) & (f_Dx < 0)] = 0
+            return f_Dx
+
+        reformed = {
+            "get_x": num_opt.get_x,
+            "set_x": set_x_clipped,
+            "get_f": num_opt.get_f,
+            "get_f_Dx": get_f_Dx_masked,
+        }
+        try:
+            reformed.update({"get_g": num_opt.get_g, "get_g_Dx": num_opt.get_g_Dx})
+        except AttributeError:
+            pass
+
+        return types.SimpleNamespace(**reformed)
+
+    def solve_unconstrained(self, numopt: NumOpt, x0: np.ndarray, x_shape):
+
+        # wrap the methods into one function as required
+        def compute_f(x):
+            x = x.reshape(x_shape)
+            numopt.set_x(x)
+            return numopt.get_f()
+
+        # wrap the methods into one function as required
+        def compute_f_Dx(x):
+            x = x.reshape(x_shape)
+            numopt.set_x(x)
+            return numopt.get_f_Dx()
+
+        [x_plus, f_plus, info] = scipy.optimize.fmin_l_bfgs_b(
+            compute_f,
+            x0,
+            fprime=compute_f_Dx,
+            maxiter=self.max_inner_iter,
+            # relative decreasing of 'f', in units of 'eps'
+            factr=self.tol_creeping,
+            # this 'pg' should be zero at exactly a local minimizer
+            pgtol=self.tol_convergence,
+        )
+
+        numopt.set_x(x_plus)
+        return [numopt.get_x(), f_plus, info]
 
 
-class SolverResult(t_.NamedTuple):
+class SolverResult(typing.NamedTuple):
     primal: np.ndarray
     dual: float
     time: float
