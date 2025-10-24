@@ -9,9 +9,9 @@ import numpy.random as random
 
 
 from a_package.workflow.formulation import Formulation
-from a_package.workflow.simulation import SimulationResult, simulate_quasi_static_pull_push
-from a_package.workflow.postprocess import post_process
-from a_package.utils import working_directory, register_run, reset_logging, switch_log_file
+from a_package.workflow.simulation import simulate_quasi_static_pull_push
+from a_package.utils.runtime import RunDir, register_run
+from a_package.utils.logging import reset_logging, switch_log_file
 
 from cases.configs import (
     read_config_files,
@@ -122,7 +122,7 @@ def preview_surface_and_gap(
         sys.exit(0)
 
 
-def run_one_trip(run, config: dict[str, dict[str, str]]):
+def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
 
     # grid
     grid = get_grid_specs(config["Grid"])
@@ -154,17 +154,19 @@ def run_one_trip(run, config: dict[str, dict[str, str]]):
     V = formulation.get_volume() * V_percent
 
     # run simulation
-    with working_directory(run.results_dir, read_only=False) as store:
-        # start sim with random initial guess
-        phi_init = random.rand(*grid.nb_elements)
-        sim_label = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
+    # with working_directory(run.results_dir, read_only=False) as store:
+    #     # start sim with random initial guess
+    #     phi_init = random.rand(*grid.nb_elements)
+    #     sim_label = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
+    phi_init = random.rand(1, 1, *grid.nb_elements)
+    simulate_quasi_static_pull_push(run.results_dir, formulation, solver, V, phi_init, trajectory)
 
-    # post-process
-    with working_directory(run.results_dir, read_only=False) as store:
-        # load so that every string represented objects are also converted to objects
-        sim = store.load(sim_label, SimulationResult)
-        p_sim = post_process(sim)
-        store.save("final", p_sim)
+    # # post-process
+    # with working_directory(run.results_dir, read_only=False) as store:
+    #     # load so that every string represented objects are also converted to objects
+    #     sim = store.load(sim_label, SimulationResult)
+    #     p_sim = post_process(sim)
+    #     store.save("final", p_sim)
 
 
 if __name__ == "__main__":
