@@ -8,6 +8,7 @@ import types
 
 import numpy as np
 
+from a_package.field import Field
 from a_package.models import CapillaryBridge
 from a_package.numeric import Grid, FirstOrderElement
 
@@ -20,8 +21,8 @@ class Formulation:
     """All necessary methods to formulate into a optimisation problem."""
 
     grid: Grid
-    upper: np.ndarray
-    lower: np.ndarray
+    upper: Field
+    lower: Field
     capi: CapillaryBridge
 
     def __post_init__(self):
@@ -52,7 +53,7 @@ class Formulation:
     def get_phase_field(self):
         return self.nodal_phase
 
-    def update_phase_field(self, nodal_phase: np.ndarray):
+    def update_phase_field(self, nodal_phase: Field):
         self.nodal_phase = np.ravel(nodal_phase)
         # Clean the phase-field where the solid bodies contact
         self.nodal_phase[self.at_contact] = 0.0
@@ -63,7 +64,7 @@ class Formulation:
             axis=0
         )
 
-    def validate_phase_field(self, nodal_phase: np.ndarray):
+    def validate_phase_field(self, nodal_phase: Field):
         # check phase field < 0
         if np.any(nodal_phase < 0):
             outlier = np.where(nodal_phase < 0, nodal_phase, np.nan)

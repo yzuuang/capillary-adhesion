@@ -1,29 +1,20 @@
 """This file addresses the physical perspectives.
 
-- Roughness of the solid surface
-- The "gap" formed between two solid surface with displacement
-- Capillary bridge
-
-NOTE: The model should be agonistic to discretization details, so functions in this file should
+The model should be agonistic to discretization details, so functions in this file should
 be limited to Field(s) -> Field(s) relations. Operators such as integral and differential are thus
-implemented in "computing".
+implemented in 'numerics'. Only modify the component axis; keep the axis even if it can be squeezed,
+i.e., #components == 1
 """
 
 import dataclasses as dc
-import typing as _t
 
 import numpy as np
 import numpy.linalg as la
 import numpy.fft as fft
 import numpy.random as random
 
+from a_package.field import Field, field_component_ax
 
-components_t: _t.TypeAlias = np.ndarray
-"""An array with the first dimension always corresponds to the number of components. One should 
-consider other dimensions unknown (ravelled) because they are related to discretization.
-
-**always keep the axis of components even if #components == 1.**
-"""
 
 
 @dc.dataclass(init=True)
@@ -37,13 +28,13 @@ class SelfAffineRoughness:
     H: float
     """Hurst exponent"""
 
-    def mapto_isotropic_psd(self, q: components_t):
+    def mapto_isotropic_psd(self, q: Field):
         """
         Get the isotropic power spectral density (psd) of a given wavenumber
         - q: wavenumber in radius, i.e. 2 pi over wavelength
         """
         # isotropic, only the magnitude matters
-        wavenumber = la.norm(q, ord=2, axis=0, keepdims=True)
+        wavenumber = la.norm(q, ord=2, axis=field_component_ax, keepdims=True)
 
         # Find three regimes
         constant = wavenumber < self.qR
@@ -60,7 +51,7 @@ class SelfAffineRoughness:
         return wavenumber, psd
 
 
-def psd_to_height(psd: components_t, rng=None, seed=None):
+def psd_to_height(psd: Field, rng=None, seed=None):
     # <h^2> corresponding to <PSD>, thus, take the square-root to match overall amplitude
     h_amp = np.sqrt(psd)
 
@@ -88,10 +79,10 @@ class CapillaryBridge:
         self.perimeter_prefactor = 3.0
 
         # To save gap heights in quadrature points
-        self.gap: components_t = None
+        self.gap: Field = None
         """gap between two rigid bodies"""
 
-    def compute_perimeter(self, phase: components_t, phase_grad: components_t):
+    def compute_perimeter(self, phase: Field, phase_grad: Field):
         """
         - phase: phase-field
         - phase_grad: gradient of phase-field
@@ -100,7 +91,7 @@ class CapillaryBridge:
             (1 / self.eta) * self.double_well_penalty(phase) + self.eta * self.square_penalty(phase_grad)
         )
 
-    def compute_energy(self, phase: components_t, phase_grad: components_t):
+    def compute_energy(self, phase: Field, phase_grad: Field):
         """
         - phase: phase-field
         - phase_grad: gradient of phase-field
@@ -117,13 +108,13 @@ class CapillaryBridge:
 
     @staticmethod
     def double_well_penalty(x):
-        return np.sum(x**2 * (1 - x) ** 2, axis=0, keepdims=True)
+        return np.sum(x**2 * (1 - x) ** 2, axis=field_component_ax, keepdims=True)
 
     @staticmethod
     def square_penalty(x):
-        return np.sum(x**2, axis=0, keepdims=True)
+        return np.sum(x**2, axis=field_component_ax, keepdims=True)
 
-    # def compute_force(self, phase: components_t, phase_grad: components_t):
+    # def compute_force(self, phase: Field, phase_grad: Field):
     #     # the common part of 3 components
     #     liquid_vapour_D_gap = (
     #         self.perimeter_prefactor
@@ -138,7 +129,7 @@ class CapillaryBridge:
 
     #     return f_x, f_y, f_z
 
-    def compute_energy_jacobian(self, phase: components_t, phase_grad: components_t):
+    def compute_energy_jacobian(self, phase: Field, phase_grad: Field):
         """
         - phase: phase-field
         - phase_grad: gradient of phase-field
@@ -166,8 +157,8 @@ class CapillaryBridge:
     def square_penalty_derivatie(x):
         return 2 * x
 
-    def compute_volume(self, phase: components_t):
+    def compute_volume(self, phase: Field):
         return phase * self.gap
 
-    def compute_volume_jacobian(self, phase: components_t):
+    def compute_volume_jacobian(self, phase: Field):
         return (self.gap,)
