@@ -14,9 +14,8 @@ class FirstOrderElement:
     It combines interpolation and quadrature.
     """
 
-    def __init__(self, grid: Grid):
+    def __init__(self, grid: Grid, sub_pt_coords: np.ndarray):
         self.grid_shape = grid.nb_elements
-        sub_pt_coords = np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]])
         self.nb_sub_pts = sub_pt_coords.shape[0]
 
         fe_pixel = LinearFiniteElementPixel()
@@ -81,7 +80,7 @@ class FirstOrderElement:
 
     def propag_sens_value(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
-        return (data.ravel() @ self.matrix_val).reshape(-1, *self.grid_shape)
+        return (data.ravel() @ self.matrix_val).reshape(-1, 1, *self.grid_shape)
 
     # def interpolate_gradient_x(self, data: np.ndarray):
     #     """Map nodal values to the interpolated gradient values, component in x."""
@@ -105,7 +104,7 @@ class FirstOrderElement:
 
     def propag_sens_gradient(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
-        return (data.ravel() @ self.matrix_grad).reshape(-1, *self.grid_shape)
+        return (data.ravel() @ self.matrix_grad).reshape(-1, 1, *self.grid_shape)
 
 
 def fill_cyclic_diagonal_1d(mat: sparse.spmatrix, j: int, N: int, val: float):
