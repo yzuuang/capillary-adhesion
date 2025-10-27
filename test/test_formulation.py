@@ -8,8 +8,8 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.models import CapillaryBridge
-from a_package.workflow.formulation import Formulation
+from a_package.field import field_component_ax, field_sub_pt_ax
+from a_package.workflow.formulation import NodalFormCapillary
 from a_package.grid import Grid
 
 
@@ -36,10 +36,12 @@ def test_energy_jacobian_in_formulation():
     # the lower surafce is flat
     h2 = np.zeros_like(h1)
 
-    capi = CapillaryBridge(theta, eta)
-    fmltn = Formulation(grid, h1, h2, capi)
     # make sure there are some areas in contact
-    fmltn.update_gap(-0.1 * a)
+    gap = np.clip(h1 -0.1 * a -h2, 0, None)
+    gap = np.expand_dims(gap, axis=(field_component_ax, field_sub_pt_ax))
+
+    capillary = NodalFormCapillary(grid, {"theta": theta, "eta": eta})
+    capillary.set_gap(gap)
 
     # All the step lengths to be used for finite difference computation
     lowest_magnitude = math.floor(0.5 * math.log10(sys.float_info.epsilon))  # machine precision determined
@@ -49,6 +51,7 @@ def test_energy_jacobian_in_formulation():
     # A circular phase field for testing
     phi = np.ones_like(h1)
     phi[(xm/L)**2 + (ym/L)**2 >= 0.5**2] = 0.0
+    phi = np.expand_dims(phi, axis=(field_component_ax, field_sub_pt_ax))
 
     # Compute jacobian numerically (2-order finite difference)
     numeric_jacobian = np.empty((deltas.size, *phi.shape))
@@ -58,18 +61,18 @@ def test_energy_jacobian_in_formulation():
             original_value = np.copy(phi[tuple(indices)])
             # get numerical jacobian via central difference
             phi[tuple(indices)] = original_value + delta
-            fmltn.update_phase_field(phi)
-            plus_val = fmltn.get_energy()
+            capillary.set_phase(phi)
+            plus_val = capillary.get_energy()
             phi[tuple(indices)] = original_value - delta
-            fmltn.update_phase_field(phi)
-            minus_val = fmltn.get_energy()
+            capillary.set_phase(phi)
+            minus_val = capillary.get_energy()
             numeric_jacobian[i, *indices] = 0.5 * (plus_val - minus_val) / delta
             # recover the original value
             phi[tuple(indices)] = original_value
 
     # Compute jacobian from the implementation
-    fmltn.update_phase_field(phi)
-    impl_jacobian = fmltn.get_energy_jacobian()
+    capillary.set_phase(phi)
+    impl_jacobian = capillary.get_energy_jacobian()
 
     # Measure the difference
     jacobian_diffs = abs(impl_jacobian - numeric_jacobian)

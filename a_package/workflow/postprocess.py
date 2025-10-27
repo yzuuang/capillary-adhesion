@@ -3,7 +3,7 @@ import dataclasses as dc
 
 import numpy as np
 
-from a_package.workflow.formulation import Formulation 
+from a_package.workflow.formulation import NodalFormCapillary 
 from a_package.workflow.simulation import SimulationResult
 from a_package.numeric import AugmentedLagrangian
 
@@ -27,7 +27,7 @@ class Evolution:
 
 @dc.dataclass
 class ProcessedResult:
-    formulating: Formulation
+    formulating: NodalFormCapillary
     minimising: AugmentedLagrangian
     evolution: Evolution
 
@@ -53,8 +53,8 @@ def post_process(res: SimulationResult):
 
         g.append(fmltn.get_gap(step.d).squeeze())
 
-        fmltn.update_gap(step.d)
-        fmltn.update_phase_field(step.phi)
+        fmltn.set_gap(step.d)
+        fmltn.set_phase(step.phi)
 
         r[index] = [step.m[0], step.m[1], step.d]
         E[index] = fmltn.get_energy()

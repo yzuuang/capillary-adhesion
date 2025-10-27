@@ -111,7 +111,7 @@ class AugmentedLagrangian:
         # initial values
         t_exec = 0
         x_shape = x0.shape
-        x_plus = x0.ravel()
+        x_plus = x0
         lam_plus = lam0
         c_plus = self.init_penalty_weight
         is_converged = False
@@ -234,7 +234,7 @@ class AugmentedLagrangian:
             num_opt.set_x(np.clip(x, num_opt.x_lb, num_opt.x_ub))
 
         def get_f_Dx_masked():
-            f_Dx = num_opt.get_f_Dx().ravel()
+            f_Dx = num_opt.get_f_Dx()
             x = num_opt.get_x()
             # Trick the solver to think those points are at the minimum so it doesn't go
             # further towards the infeasible zone. The clipping in the setter will then
@@ -281,7 +281,7 @@ class AugmentedLagrangian:
             pgtol=self.tol_convergence,
         )
 
-        numopt.set_x(x_plus)
+        numopt.set_x(np.reshape(x_plus, x_shape))
         return [numopt.get_x(), f_plus, info]
 
 

@@ -15,7 +15,7 @@ from a_package.workflow.postprocess import ProcessedResult
 def get_capillary_state(pr: ProcessedResult, index: int):
     return DropletData(
         pr.formulating.grid,
-        pr.formulating.capi.eta,
+        pr.formulating.bridge.eta,
         pr.formulating.upper,
         pr.formulating.lower,
         pr.evolution.r[index],

@@ -8,7 +8,7 @@ import numpy as np
 import numpy.random as random
 
 from a_package.models import CapillaryBridge
-from a_package.workflow.formulation import Formulation
+from a_package.workflow.formulation import NodalFormCapillary
 from a_package.workflow.simulation import Simulation
 from a_package.utils.runtime import RunDir, register_run
 from a_package.utils.logging import reset_logging, switch_log_file
@@ -145,11 +145,12 @@ def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
     solver_args = get_optimizer_args(config["Solver"])
 
     # liquid volume from a percentage specification
-    formulation = Formulation(grid, upper, lower, CapillaryBridge(**capi_args))
+    formulation = NodalFormCapillary(grid, capi_args)
     z1 = np.amin(trajectory)
-    formulation.update_gap(z1)
-    full_liquid = np.ones(grid.nb_elements)
-    formulation.update_phase_field(full_liquid)
+    gap = np.expand_dims(np.clip(upper + z1 - lower, 0, None), axis=(0,1))
+    formulation.set_gap(gap)
+    full_liquid = np.ones([1, 1, *grid.nb_elements])
+    formulation.set_phase(full_liquid)
     V_percent = 0.01 * float(config["Capillary"]["liquid_volume_percent"])
     V = formulation.get_volume() * V_percent
 
