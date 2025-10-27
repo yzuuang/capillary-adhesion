@@ -8,7 +8,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.field import field_component_ax, field_sub_pt_ax
+from a_package.field import adapt_shape
 from a_package.workflow.formulation import NodalFormCapillary
 from a_package.grid import Grid
 
@@ -38,7 +38,6 @@ def test_energy_jacobian_in_formulation():
 
     # make sure there are some areas in contact
     gap = np.clip(h1 -0.1 * a -h2, 0, None)
-    gap = np.expand_dims(gap, axis=(field_component_ax, field_sub_pt_ax))
 
     capillary = NodalFormCapillary(grid, {"theta": theta, "eta": eta})
     capillary.set_gap(gap)
@@ -51,7 +50,7 @@ def test_energy_jacobian_in_formulation():
     # A circular phase field for testing
     phi = np.ones_like(h1)
     phi[(xm/L)**2 + (ym/L)**2 >= 0.5**2] = 0.0
-    phi = np.expand_dims(phi, axis=(field_component_ax, field_sub_pt_ax))
+    phi = adapt_shape(phi)
 
     # Compute jacobian numerically (2-order finite difference)
     numeric_jacobian = np.empty((deltas.size, *phi.shape))
@@ -75,8 +74,8 @@ def test_energy_jacobian_in_formulation():
     impl_jacobian = capillary.get_energy_jacobian()
 
     # Measure the difference
-    jacobian_diffs = abs(impl_jacobian - numeric_jacobian)
-    diffs = np.max(jacobian_diffs, axis=tuple(range(1, np.ndim(jacobian_diffs))))
+    jacobian_diffs = abs(impl_jacobian - numeric_jacobian).squeeze()
+    diffs = np.max(jacobian_diffs, axis=(-2,-1))
 
     # Plots
     if show_me_plot:

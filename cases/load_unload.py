@@ -7,7 +7,6 @@ import matplotlib.animation as ani
 import numpy as np
 import numpy.random as random
 
-from a_package.models import CapillaryBridge
 from a_package.workflow.formulation import NodalFormCapillary
 from a_package.workflow.simulation import Simulation
 from a_package.utils.runtime import RunDir, register_run
@@ -147,7 +146,7 @@ def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
     # liquid volume from a percentage specification
     formulation = NodalFormCapillary(grid, capi_args)
     z1 = np.amin(trajectory)
-    gap = np.expand_dims(np.clip(upper + z1 - lower, 0, None), axis=(0,1))
+    gap = np.clip(upper + z1 - lower, 0, None)
     formulation.set_gap(gap)
     full_liquid = np.ones([1, 1, *grid.nb_elements])
     formulation.set_phase(full_liquid)
