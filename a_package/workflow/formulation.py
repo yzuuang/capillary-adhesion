@@ -8,7 +8,7 @@ import types
 import numpy as np
 
 from a_package.grid import Grid
-from a_package.field import Field
+from a_package.field import Field, adapt_shape
 from a_package.models import CapillaryBridge
 from a_package.numeric.fem import FirstOrderElement
 from a_package.numeric.quadrature import Quadrature, centroid_gaussian_quadrature
@@ -48,10 +48,10 @@ class NodalFormCapillary:
     def get_gap(self):
         return self.nodal_gap
 
-    def set_gap(self, gap: Field):
-        self.nodal_gap = gap
+    def set_gap(self, value):
+        self.nodal_gap = adapt_shape(value)
         # map to quadrature points
-        self.bridge.gap = self.fem.interpolate_value(gap)
+        self.bridge.gap = self.fem.interpolate_value(self.nodal_gap)
 
     @property
     def quadr_gap(self):
@@ -72,17 +72,17 @@ class NodalFormCapillary:
     def phase_ub(self):
         return self.bridge.phase_liquid
 
-    def set_phase(self, value: Field):
+    def set_phase(self, value):
         # Clean the phase-field where the solid bodies contact
         value[self.in_contact_part] = 0.
         self.nodal_phase = value
         # map to quadrature points
-        self.quadr_phase = self.fem.interpolate_value(value)
+        self.quadr_phase = self.fem.interpolate_value(self.nodal_phase)
         # self._quad_phase_grad = np.stack(
         #     [self.fem.interpolate_gradient_x(nodal_phase), self.fem.interpolate_gradient_y(nodal_phase)],
         #     axis=0
         # )
-        self.quadr_phase_grad = self.fem.interpolate_gradient(value)
+        self.quadr_phase_grad = self.fem.interpolate_gradient(self.nodal_phase)
 
     def validate_phase_field(self, nodal_phase: Field):
         # check phase field < 0

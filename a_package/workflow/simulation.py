@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from a_package.field import Field, field_component_ax, field_sub_pt_ax
+from a_package.field import adapt_shape
 from a_package.grid import Grid
 from a_package.numeric import AugmentedLagrangian
 from a_package.workflow.formulation import NodalFormCapillary
@@ -43,8 +43,8 @@ class Simulation:
             self, upper: np.ndarray, lower: np.ndarray, volume: float, phase_init: np.ndarray, trajectory: np.ndarray,
             round_trip: bool = True,):
 
-        upper: Field = np.expand_dims(upper, axis=(field_component_ax, field_sub_pt_ax))
-        lower: Field = np.expand_dims(lower, axis=(field_component_ax, field_sub_pt_ax))
+        upper = adapt_shape(upper)
+        lower = adapt_shape(lower)
 
         formulation = NodalFormCapillary(self.grid, self.capillary_args)
         minimiser = AugmentedLagrangian(**self.optimizer_args)
