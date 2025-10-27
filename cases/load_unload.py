@@ -7,9 +7,9 @@ import matplotlib.animation as ani
 import numpy as np
 import numpy.random as random
 
-
+from a_package.models import CapillaryBridge
 from a_package.workflow.formulation import Formulation
-from a_package.workflow.simulation import simulate_quasi_static_pull_push
+from a_package.workflow.simulation import Simulation
 from a_package.utils.runtime import RunDir, register_run
 from a_package.utils.logging import reset_logging, switch_log_file
 
@@ -17,10 +17,10 @@ from cases.configs import (
     read_config_files,
     save_config_to_file,
     extract_sweeps,
-    get_grid_specs,
+    create_grid,
     match_shape_and_get_height,
-    get_capillary,
-    get_optimizer,
+    get_capillary_args,
+    get_optimizer_args,
 )
 from cases.visualise_onerun import create_overview_animation
 
@@ -70,7 +70,7 @@ def preview_surface_and_gap(
 ):
     """A visual check before running simulations."""
     # get values from params
-    grid = get_grid_specs(grid_params)
+    grid = create_grid(grid_params)
     h1 = match_shape_and_get_height(grid, upper_surface_params)
     h0 = match_shape_and_get_height(grid, lower_surface_params)
     d_min = float(trajectory_params["min_separation"])
@@ -125,7 +125,7 @@ def preview_surface_and_gap(
 def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
 
     # grid
-    grid = get_grid_specs(config["Grid"])
+    grid = create_grid(config["Grid"])
 
     # surfaces
     upper = match_shape_and_get_height(grid, config["UpperSurface"])
@@ -139,13 +139,13 @@ def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
     trajectory = np.linspace(d_max, d_min, nb_steps)
 
     # capillary model
-    capi = get_capillary(config["Capillary"])
+    capi_args = get_capillary_args(config["Capillary"])
 
     # solver
-    solver = get_optimizer(config["Solver"])
+    solver_args = get_optimizer_args(config["Solver"])
 
     # liquid volume from a percentage specification
-    formulation = Formulation(grid, upper, lower, capi)
+    formulation = Formulation(grid, upper, lower, CapillaryBridge(**capi_args))
     z1 = np.amin(trajectory)
     formulation.update_gap(z1)
     full_liquid = np.ones(grid.nb_elements)
@@ -159,7 +159,8 @@ def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
     #     phi_init = random.rand(*grid.nb_elements)
     #     sim_label = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
     phi_init = random.rand(1, 1, *grid.nb_elements)
-    simulate_quasi_static_pull_push(run.results_dir, formulation, solver, V, phi_init, trajectory)
+    simulation = Simulation(grid, run.results_dir, capi_args, solver_args)
+    simulation.simulate_quasi_static_pull_push(upper, lower, V, phi_init, trajectory)
 
     # # post-process
     # with working_directory(run.results_dir, read_only=False) as store:
