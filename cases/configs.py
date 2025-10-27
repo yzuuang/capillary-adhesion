@@ -60,7 +60,7 @@ def extract_sweeps(config: dict[str, dict[str, str]], prefix):
     return Sweep(sweep_specs)
 
 
-def get_grid_specs(grid_params: dict[str, str]):
+def create_grid(grid_params: dict[str, str]):
     # grid
     a = float(grid_params["pixel_size"])
     N = int(grid_params["nb_pixels"])
@@ -171,16 +171,18 @@ def _get_height_of_pattern(grid: Grid, surface_params: dict[str, str]):
     return np.atleast_2d(height)
 
 
-def get_capillary(capillary_params: dict[str, str]):
+def get_capillary_args(capillary_params: dict[str, str]):
     theta = (np.pi / 180) * float(capillary_params["contact_angle_degree"])
     eta = float(capillary_params["interface_thickness"])
-    return CapillaryBridge(eta, theta)
+    return dict(eta=eta, theta=theta)
 
 
-def get_optimizer(optimzer_params: dict[str, str]):
+def get_optimizer_args(optimzer_params: dict[str, str]):
     i_max = int(optimzer_params["max_nb_iters"])
     l_max = int(optimzer_params["max_nb_loops"])
     tol_conver = float(optimzer_params["tol_convergence"])
     tol_constr = float(optimzer_params["tol_constraints"])
     c_init = float(optimzer_params["init_penalty_weight"])
-    return AugmentedLagrangian(i_max, l_max, tol_conver, tol_constr, c_init)
+    return dict(
+        max_inner_iter=i_max, max_outer_loop=l_max, tol_convergence=tol_conver, tol_constraint=tol_constr,
+        init_penalty_weight=c_init)
