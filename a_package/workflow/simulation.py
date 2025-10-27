@@ -4,10 +4,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from a_package.field import Field, field_component_ax, field_sub_pt_ax
 from a_package.grid import Grid
-from a_package.models import CapillaryBridge
 from a_package.numeric import AugmentedLagrangian
-from a_package.workflow.formulation import Formulation
+from a_package.workflow.formulation import NodalFormCapillary
 from a_package.utils.data_io import StepRecorder
 
 
@@ -25,7 +25,7 @@ class SimulationStep:
 
 @dataclass
 class SimulationResult:
-    formulating: Formulation
+    formulating: NodalFormCapillary
     minimising: AugmentedLagrangian
     steps: list[SimulationStep]
 
@@ -40,18 +40,14 @@ class Simulation:
         self.optimizer_args = optimizer_args
 
     def simulate_quasi_static_pull_push(
-        self,
-        upper: np.ndarray,
-        lower: np.ndarray,
-        volume: float,
-        phase_init: np.ndarray,
-        trajectory: np.ndarray,
-        round_trip: bool = True,
-    ):
+            self, upper: np.ndarray, lower: np.ndarray, volume: float, phase_init: np.ndarray, trajectory: np.ndarray,
+            round_trip: bool = True,):
 
-        formulation = Formulation(self.grid, upper, lower, CapillaryBridge(**self.capillary_args))
+        upper: Field = np.expand_dims(upper, axis=(field_component_ax, field_sub_pt_ax))
+        lower: Field = np.expand_dims(lower, axis=(field_component_ax, field_sub_pt_ax))
+
+        formulation = NodalFormCapillary(self.grid, self.capillary_args)
         minimiser = AugmentedLagrangian(**self.optimizer_args)
-
 
         if round_trip:
             trajectory = np.concatenate((trajectory, np.flip(trajectory)[1:]))
@@ -71,14 +67,15 @@ class Simulation:
         }
 
         # simulate
-        x = np.asfortranarray(phase_init)
+        x = np.asarray(phase_init)
         original_shape = x.shape
         lam = 0.0
         for index, delta_z in enumerate(trajectory):
             # update the parameter
             logger.info(f"Parameter of interest: mean distance={delta_z}")
-            formulation.update_gap(delta_z)
-            formulation.update_phase_field(x)
+            gap = np.clip(upper + delta_z - lower, 0, None)
+            formulation.set_gap(gap)
+            formulation.set_phase(x)
 
             # solve the problem
             numopt = formulation.create_numopt_with_constant_volume(volume)
@@ -98,15 +95,10 @@ class Simulation:
 
             # save the results
             self.store.save_new_step(
-                formulation.grid,
-                fields={"phase": phase, "gap": formulation.get_gap(delta_z)},
-                scalars={
-                    "pressure": solver_result.dual,
-                    "volume": formulation.get_volume(),
-                    "perimeter": formulation.get_perimeter(),
-                    "energy": formulation.get_energy(),
-                },
-            )
+                formulation.grid, fields={"phase": phase, "gap": gap},
+                scalars={"pressure": solver_result.dual, "volume": formulation.get_volume(),
+                         "perimeter": formulation.get_perimeter(),
+                         "energy": formulation.get_energy()})
 
             # update next iter
             x = phase
