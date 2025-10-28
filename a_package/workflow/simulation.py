@@ -8,7 +8,7 @@ from a_package.field import adapt_shape
 from a_package.grid import Grid
 from a_package.numeric import AugmentedLagrangian
 from a_package.workflow.formulation import NodalFormCapillary
-from a_package.utils.data_io import StepRecorder
+from a_package.workflow.common import SimulationIO, Term
 
 
 logger = logging.getLogger(__name__)
@@ -32,16 +32,17 @@ class SimulationResult:
 
 class Simulation:
 
-    def __init__(self, grid: Grid, store_dir: pathlib.Path | str, capillary_args: dict,
-                 optimizer_args: dict) -> None:
+    def __init__(
+            self, grid: Grid, store_dir: pathlib.Path | str, capillary_args: dict = {},
+            optimizer_args: dict = {}) -> None:
         self.grid = grid
-        self.store = StepRecorder(store_dir)
+        self.store = SimulationIO(self.grid, store_dir)
         self.capillary_args = capillary_args
         self.optimizer_args = optimizer_args
 
     def simulate_quasi_static_pull_push(
             self, upper: np.ndarray, lower: np.ndarray, volume: float, phase_init: np.ndarray, trajectory: np.ndarray,
-            round_trip: bool = True,):
+            round_trip: bool = True):
 
         upper = adapt_shape(upper)
         lower = adapt_shape(lower)
@@ -65,6 +66,8 @@ class Simulation:
             "iter_limit": [],
             "abnormal_stop": [],
         }
+
+        self.store.save_constant(fields={Term.phase_init: phase_init})
 
         # simulate
         x = np.asarray(phase_init)
@@ -93,12 +96,11 @@ class Simulation:
             phase = np.reshape(solver_result.primal, original_shape)
             formulation.validate_phase_field(phase)
 
-            # save the results
-            self.store.save_new_step(
-                formulation.grid, fields={"phase": phase, "gap": gap},
-                scalars={"pressure": solver_result.dual, "volume": formulation.get_volume(),
-                         "perimeter": formulation.get_perimeter(),
-                         "energy": formulation.get_energy()})
+            # save this iteration to storage
+            self.store.save_step(index, fields={Term.upper_solid: upper, Term.lower_solid: lower, Term.gap: gap, 
+                                                Term.phase: phase}, single_values={
+                                 Term.separation: delta_z, Term.pressure: solver_result.dual, 
+                                 Term.energy: formulation.get_energy()})
 
             # update next iter
             x = phase
@@ -111,7 +113,7 @@ class Simulation:
             logger.warning(f"The following steps may have problems:\n {report}")
 
         # FIXME: need to return something?
-        return
+        return self.store
 
 
 # FIXME: sliding
