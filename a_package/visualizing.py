@@ -169,7 +169,7 @@ def plot_contact_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
 
     # nondimensionalize by 'eta'
     border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
-    im = ax.imshow(g, cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4, interpolation='nearest', extent=border)
+    im = ax.imshow(contact, cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4, interpolation='nearest', extent=border)
     return im
 
 
