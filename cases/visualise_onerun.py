@@ -1,27 +1,21 @@
 import os
 import sys
 
-from a_package.workflow.postprocess import ProcessedResult
-from a_package.utils import working_directory
+from a_package.workflow.common import SimulationIO
 from a_package.utils.runtime import RunDir
 from a_package.visualizing import *
 
 import matplotlib.pyplot as plt
 
 
-def main():
-    anim = create_overview_animation(sys.argv[1], sys.argv[2])
-    plt.show()
-
-
-def create_overview_animation(run_path):
+def create_overview_animation(run_path, grid):
     run_dir = RunDir(run_path)
     # retrieve processed result
-    with working_directory(run_dir.results_dir, read_only=True) as store:
-        pr = store.load("final", ProcessedResult)
+    store = SimulationIO(grid, run_dir.results_dir)
     # create anime
+
     latexify_plot(15)
-    anim = animate_droplet_evolution_with_curves(pr)
+    anim = animate_droplet_evolution_with_curves(store)
     # save it
     filename_base = os.path.join(run_dir.visuals_dir, f"overview")
     anim.save(f"{filename_base}.mp4", writer="ffmpeg")
@@ -29,21 +23,22 @@ def create_overview_animation(run_path):
     return anim
 
 
-def animate_droplet_evolution(pr: ProcessedResult):
+def animate_droplet_evolution(io: SimulationIO):
     fig, ax = plt.subplots(figsize=(6, 6), constrained_layout=True)
 
     def update_image(i_frame: int):
         ax.clear()
-        plot_combined_topography(ax, get_capillary_state(pr, i_frame))
+        plot_combined_topography(ax, io, i_frame)
         ax.set_xlabel(r"Position $x/\eta$")
         ax.set_ylabel(r"Position $y/\eta$")        
         return ax.images
 
-    n_step = pr.evolution.nb_steps
+    data = io.load_trajectory(single_value_names=[Term.separation])
+    n_step = len(data[Term.separation])
     return animation.FuncAnimation(fig, update_image, n_step, interval=200, repeat_delay=3000)
 
 
-def animate_droplet_evolution_with_curves(pr: ProcessedResult):
+def animate_droplet_evolution_with_curves(io: SimulationIO):
     # 1 Figure, split into two parts
     # - LHS, 1 ax to plot combined topography
     # - RHS, 3 rows of axs to plot energy, F_z, F_x + F_y curves respectively
@@ -53,33 +48,39 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
     axs_lhs = sf1.subplots(2, 1, sharex=True, height_ratios=[1, 4])
     axs = np.append(axs, axs_lhs)
 
-    n_step = pr.evolution.nb_steps
-    idx_row = pr.formulating.grid.nb_elements[0] // 2
-    a = min(pr.formulating.grid.element_sizes)
+    data = io.load_trajectory(field_names=[Term.upper_solid, Term.lower_solid],
+                              single_value_names=[Term.separation, Term.energy, Term.pressure])
+    n_step = len(data[Term.separation])
+    idx_row = io.grid.nb_elements[0] // 2
+    unit = min(io.grid.element_sizes)
 
     # decides the view limit
     view_margin_scale = 0.05
 
-    h_min = np.amin(pr.formulating.lower[idx_row, :]) / a
-    h_max = (np.amax(pr.formulating.upper[idx_row, :]) + np.amax(pr.evolution.r[:, -1])) / a
+    h_min = np.amin(data[Term.lower_solid][0][0, 0, idx_row, :]) / unit
+    h_max = (np.amax(data[Term.upper_solid][0][0, 0, idx_row, :]) + np.amax(data[Term.separation])) / unit
     h_margin = view_margin_scale * (h_max - h_min)
     h_min = h_min - h_margin
     h_max = h_max + 10*h_margin  # for the legend
 
-    e_min = np.amin(pr.evolution.E) / a**2
-    e_max = np.amax(pr.evolution.E) / a**2
+    energy = data[Term.energy]
+    e_min = np.amin(energy) / unit**2
+    e_max = np.amax(energy) / unit**2
     e_margin = view_margin_scale * (e_max - e_min)
     e_min = e_min - e_margin
     e_max = e_max + e_margin
 
-    F_n_min = np.amin(pr.evolution.Fz) / a
-    F_n_max = np.amax(pr.evolution.Fz) / a
+    z = data[Term.separation]
+    normal_force = -(energy[1:] - energy[:-1]) / (z[1:] - z[:-1])
+    F_n_min = np.amin(normal_force) / unit
+    F_n_max = np.amax(normal_force) / unit
     F_n_margin = view_margin_scale * (F_n_max - F_n_min)
     F_n_min = F_n_min - F_n_margin
     F_n_max = F_n_max + F_n_margin
 
-    P_min = np.amin(pr.evolution.P) / a
-    P_max = np.amax(pr.evolution.P) / a
+    pressure = data[Term.pressure]
+    P_min = np.amin(pressure) * unit
+    P_max = np.amax(pressure) * unit
     P_margin = view_margin_scale * (P_max - P_min)
     P_min = P_min - P_margin
     P_max = P_max + P_margin
@@ -88,29 +89,29 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
         for ax in axs:
             ax.clear()
 
-        plot_gibbs_free_energy(axs[0], pr, i_frame + 1)
+        plot_gibbs_free_energy(axs[0], io, i_frame + 1)
         axs[0].set_ylim(e_min, e_max)
         axs[0].set_ylabel(r"Energy $E/\gamma_\mathrm{lv} a^2$")
         axs[0].set_title("Evolution")
 
-        plot_normal_force(axs[1], pr, i_frame + 1)
+        plot_normal_force(axs[1], io, i_frame + 1)
         axs[1].set_ylim(F_n_min, F_n_max)
         axs[1].set_ylabel(r"Normal force $F/\gamma_\mathrm{lv} a$")
 
-        plot_perimeter(axs[2], pr, i_frame + 1)
+        plot_pressure(axs[2], io, i_frame + 1)
         axs[2].set_ylim(P_min, P_max)
         axs[2].set_ylabel(r"Perimeter $P/a$")
 
         axs[2].set_xlim([0, n_step])
         axs[2].set_xlabel(r"Step (size=$0.1 a$)")
 
-        plot_cross_section_sketch(axs[-2], get_capillary_state(pr, i_frame), idx_row)
+        plot_cross_section_sketch(axs[-2], io, i_frame, idx_row)
         axs[-2].set_ylim(h_min, h_max)
         axs[-2].set_ylabel(r"Position $z/a$")
         axs[-2].set_title("Cross section")
 
-        plot_combined_topography(axs[-1], get_capillary_state(pr, i_frame))
-        axs[-1].axhline(pr.formulating.grid.form_nodal_axis(0)[idx_row] / a, color="k")
+        plot_combined_topography(axs[-1], io, i_frame)
+        axs[-1].axhline(io.grid.form_nodal_axis(0)[idx_row] / unit, color="k")
         axs[-1].set_ylabel(r"Position $y/a$")
         axs[-1].set_title("Gap & Phase")
 
@@ -119,7 +120,3 @@ def animate_droplet_evolution_with_curves(pr: ProcessedResult):
         return [axs[0].lines, axs[1].lines, axs[2].lines, axs[-1].images]
 
     return animation.FuncAnimation(fig, update_image, n_step, interval=200, repeat_delay=3000)
-
-
-if __name__ == '__main__':
-    main()

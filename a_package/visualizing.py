@@ -7,25 +7,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+from a_package.workflow.common import SimulationIO, Term
 from a_package.models import SelfAffineRoughness
 from a_package.grid import Grid
-from a_package.workflow.postprocess import ProcessedResult
 
-
-def get_capillary_state(pr: ProcessedResult, index: int):
-    return DropletData(
-        pr.formulating.grid,
-        pr.formulating.bridge.eta,
-        pr.formulating.upper,
-        pr.formulating.lower,
-        pr.evolution.r[index],
-        pr.evolution.g[index],
-        pr.evolution.phi[index],
-    )
-
-
-# TODO: 'plot...' shall return the 'Artist' as the behaviour of 'matplotlib'.
-# TODO: change parameter lists into something like (data, ax, **extra_plot_args)
 
 # Setup for colours
 cmap_height = "plasma"
@@ -42,39 +27,50 @@ color_liquid_phase = "steelblue"
 color_transition_phase = "lightblue"
 
 
-@dc.dataclass
-class DropletData:
-    """Somewhat flat data with all necessary values for visualizing one capillary state."""
-    grid: Grid
-    eta: float       # interfacial width
-    h1: np.ndarray   # roughness of the 1 plate in 2D-array
-    h2: np.ndarray   # roughness of the 2 plate in 2D-array
-    r: np.ndarray    # displacement between the baselines of two plates
-    g: np.ndarray    # gap
-    phi: np.ndarray  # phase-field in 2D-array
+# @dc.dataclass
+# class DropletData:
+#     """Somewhat flat data with all necessary values for visualizing one capillary state."""
+#     grid: Grid
+#     h1: np.ndarray   # roughness of the 1 plate in 2D-array
+#     h2: np.ndarray   # roughness of the 2 plate in 2D-array
+#     r: np.ndarray    # displacement between the baselines of two plates
+#     g: np.ndarray    # gap
+#     phi: np.ndarray  # phase-field in 2D-array
 
 
-@dc.dataclass
-class Record:
-    data: list[DropletData]  # think as if taking snapshots
-    init_guess: np.ndarray
+# def get_droplet_data(io: SimulationIO, step: int):
+#     constant = io.load_constant(field_names=[Term.upper_solid, Term.lower_solid])
+#     data = io.load_step(step, field_names=[Term.gap, Term.phase], single_value_names=[Term.separation])
+#     return DropletData(
+#         io.grid, constant[Term.upper_solid],
+#         constant[Term.lower_solid],
+#         data[Term.separation],
+#         data[Term.gap],
+#         data[Term.phase])
 
 
 eps = 1e-2  # cut off value to decide one phase
 
 
-def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, value_cutoff=eps):
+def plot_cross_section_sketch(ax: plt.Axes, io: SimulationIO, idx_step: int, idx_row: int, value_cutoff=eps):
     # Get the data of the cross section at specified row index
     # FIXME: only shift in x-axis is considered.
-    h1 = np.roll(data.h1[idx_row,:], int(data.r[1]/min(data.grid.element_sizes)))
-    h1 = (h1 + data.r[-1]) / min(data.grid.element_sizes)
-    h2 = data.h2[idx_row,:] / min(data.grid.element_sizes)
-    x = data.grid.form_nodal_axis(0) / min(data.grid.element_sizes)
+    grid = io.grid
+    unit = min(grid.element_sizes)
+    data = io.load_step(
+        idx_step, field_names=[Term.upper_solid, Term.lower_solid, Term.phase],
+        single_value_names=[Term.separation])
+
+    h1 = data[Term.upper_solid][0,0,idx_row]
+    sep = data[Term.separation]
+    h1 = (h1 + sep) / unit
+    h2 = data[Term.lower_solid][0,0,idx_row] / unit
+    x = grid.form_nodal_axis(0) / unit
 
     # add border values due to periodic boundary condition
     h1 = np.append(h1, h1[0])
     h2 = np.append(h2, h2[0])
-    x = np.append(x, data.grid.lengths[0]/min(data.grid.element_sizes))
+    x = np.append(x, grid.lengths[0]/unit)
 
     # plot the two plates
     ax.plot(x, h1, "k-")
@@ -89,7 +85,7 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
             ax.fill_between(x[contact_part], h2[contact_part], h1[contact_part], color=color_solid_phase)
 
     # highlight the liquid phase (if any)
-    phi = data.phi[idx_row, :]
+    phi = data[Term.phase][0, 0, idx_row, :]
     water_phase = np.asarray(phi >= 1 - value_cutoff).nonzero()[0]
     if np.size(water_phase):
         i_diff = np.diff(water_phase, prepend=water_phase[0] - 1)
@@ -98,7 +94,7 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
             ax.fill_between(x[section], h2[section], h1[section], color=color_liquid_phase)
 
     # # highlight the vapour phase (if any)
-    # phi = data.phi[idx_row, :]
+    # phi = data[Term.phase][0, 0, idx_row, :]
     # vapour_phase = np.asarray(phi <= 0 + value_cutoff).nonzero()[0]
     # if np.size(vapour_phase):
     #     i_diff = np.diff(vapour_phase, prepend=vapour_phase[0] - 1)
@@ -107,7 +103,7 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
     #         ax.fill_between(x[section], h2[section], h1[section], color=color_vapour_phase)
 
     # highlight the transition phase (if any)
-    phi = data.phi[idx_row, :]
+    phi = data[Term.phase][0, 0, idx_row, :]
     transition_phase = np.asarray((phi <= 1 - value_cutoff) & (phi >= 0 + value_cutoff)).nonzero()[0]
     if np.size(transition_phase):
         i_diff = np.diff(transition_phase, prepend=transition_phase[0] - 1)
@@ -127,27 +123,32 @@ def plot_cross_section_sketch(ax: plt.Axes, data: DropletData, idx_row: int, val
     ax.set_xlim(x[0], x[-1])
 
 
-def plot_cross_section_phase_field(ax: plt.Axes, data: DropletData, idx_row: int):
-    phi = data.phi[idx_row,:]
-    x_dimensionless = data.grid.form_nodal_axis(0) / min(data.grid.element_sizes)
+def plot_cross_section_phase_field(ax: plt.Axes, io: SimulationIO, idx_step: int, idx_row: int):
+    data = io.load_step(idx_step, field_names=[Term.phase])
+    phi = data[Term.phase][0, 0, idx_row,:]
+    x_dimensionless = io.grid.form_nodal_axis(0) / min(io.grid.element_sizes)
     ax.plot(x_dimensionless, phi, color='C0')
 
 
-def plot_height_topography(ax: plt.Axes, data: DropletData):
+def plot_height_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
+    data = io.load_step(idx_step, field_names=[Term.upper_solid])
+    unit = min(io.grid.element_sizes)
     # make value dimension less
-    h = data.h1 / min(data.grid.element_sizes)
+    h = data[Term.upper_solid].squeeze() / unit
 
-    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
+    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
     im = ax.imshow(h, interpolation='none', cmap=cmap_height, extent=tuple(border))
 
     return im
 
 
-def plot_gap_topography(ax: plt.Axes, data: DropletData):
+def plot_gap_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
     # nondimensionalize by 'eta'
-    g = data.g / min(data.grid.element_sizes)
-    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
-    
+    data = io.load_step(idx_step, field_names=[Term.gap])
+    unit = min(io.grid.element_sizes)
+    g = data[Term.gap].squeeze() / unit
+    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
+
     # Set a negative 'vmin' so that the map still looks blue
     vmax = g.max()
     vmin = 0
@@ -157,30 +158,36 @@ def plot_gap_topography(ax: plt.Axes, data: DropletData):
     return im
 
 
-def plot_contact_topography(ax: plt.Axes, data: DropletData):
+def plot_contact_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
+    # nondimensionalize by 'eta'
+    data = io.load_step(idx_step, field_names=[Term.gap])
+    unit = min(io.grid.element_sizes)
+    g = data[Term.gap].squeeze() / unit
+
     # mask the non-contact part
-    contact = np.ma.masked_where(data.g > 0, data.g / min(data.grid.element_sizes))
+    contact = np.ma.masked_where(g > 0, g)
 
     # nondimensionalize by 'eta'
-    contact = contact / min(data.grid.element_sizes)
-    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
-
-    im = ax.imshow(contact, cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4, interpolation='nearest', extent=border)
+    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
+    im = ax.imshow(g, cmap=cmap_contact, vmin=-1, vmax=1, alpha=0.4, interpolation='nearest', extent=border)
     return im
 
 
-def plot_droplet_topography(ax: plt.Axes, data: DropletData):
-    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
+def plot_droplet_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
+    data = io.load_step(idx_step, field_names=[Term.phase])
+    unit = min(io.grid.element_sizes)
     # only use a part of the colour map, as the bluest blue is too dark
     vmin = 0
     vmax = 1.5
+    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
 
-    liquid = np.ma.masked_where(data.phi <= 1 - eps, data.phi)
+    phi = data[Term.phase].squeeze()
+    liquid = np.ma.masked_where(phi <= 1 - eps, phi)
     im = ax.imshow(
         liquid, cmap=cmap_phase_field, vmin=vmin, vmax=vmax, alpha=0.85, interpolation="nearest", extent=border
     )
 
-    transition = np.ma.masked_where((data.phi <= 0 + eps) | (data.phi > 1 - eps), data.phi)
+    transition = np.ma.masked_where((phi <= 0 + eps) | (phi > 1 - eps), phi)
     im = ax.imshow(
         transition, cmap=cmap_phase_field, vmin=vmin, vmax=vmax, alpha=0.7, interpolation="nearest", extent=border
     )
@@ -188,63 +195,58 @@ def plot_droplet_topography(ax: plt.Axes, data: DropletData):
     return im
 
 
-def plot_phase_field_topography(ax: plt.Axes, data: DropletData):
-    phi = data.phi
+def plot_phase_field_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
+    data = io.load_step(idx_step, field_names=[Term.phase]) 
+    unit = min(io.grid.element_sizes)
     # NOTE: the value 2.0 is for solid phase, while that of the water / vapor phase is 1.0 / 0.0 respectively.
     # these values are to match the color in the "afmhot" colormap.
     # value_contact = 2.0
     # phi[g <= 0] = value_contact
-    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / min(data.grid.element_sizes)
-    im = ax.imshow(phi, vmin=0, vmax=2, cmap='Blues', interpolation='nearest', extent=border)
+    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / unit
+    im = ax.imshow(data[Term.phase].squeeze(), vmin=0, vmax=2, cmap='Blues', interpolation='nearest', extent=border)
     return im
 
 
-def plot_interface_topography(ax: plt.Axes, data:DropletData):
-    dphi = np.gradient(data.phi)
+def plot_interface_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
+    data = io.load_step(idx_step, field_names=[Term.phase]) 
+    dphi = np.gradient(data[Term.phase].squeeze())
     edge = sum(dphi_i**2 for dphi_i in dphi) > 1e-6
-    interface = np.where(edge, data.phi, 0)
+    interface = np.where(edge, data[Term.phase].squeeze(), 0)
     # NOTE: hard-coded pixel size 0.1
-    border = np.array([0, data.grid.lengths[0], 0, data.grid.lengths[1]]) / 1e-1
+    border = np.array([0, io.grid.lengths[0], 0, io.grid.lengths[1]]) / 1e-1
     im = ax.imshow(interface, cmap="binary", vmin=0.0, vmax=None, interpolation='nearest', extent=border)
     return im
 
 
-def plot_combined_topography(ax: plt.Axes, data: DropletData):
-    im1 = plot_gap_topography(ax, data)
-    im2 = plot_contact_topography(ax, data)
-    # im3 = plot_interface_topography(ax, data)
-    im4 = plot_droplet_topography(ax, data)
-    # im4 = plot_phase_field_topography(ax, data)
+def plot_combined_topography(ax: plt.Axes, io: SimulationIO, idx_step: int):
+    im1 = plot_gap_topography(ax, io, idx_step)
+    im2 = plot_contact_topography(ax, io, idx_step)
+    # im3 = plot_interface_topography(ax, io, idx_step)
+    im4 = plot_droplet_topography(ax, io, idx_step)
+    # im4 = plot_phase_field_topography(ax, io, idx_step)
     # return im1, im2, im4
 
 
-def demonstrate_dynamics(ax: plt.Axes, many_data: list[DropletData]):
+def demonstrate_dynamics(ax: plt.Axes, io: SimulationIO):
     # extract data
-    eta = many_data[0].eta
-    many_d = np.hstack([data.d for data in many_data])
+    data = io.load_trajectory(single_value_names=[Term.separation])
+    unit = min(io.grid.element_sizes)
+    ax.plot(data[Term.separation] / unit)
 
-    ax.plot(many_d/eta)
 
+def plot_gibbs_free_energy(ax: plt.Axes, io: SimulationIO, nb_steps: int | None = None):
 
-def plot_gibbs_free_energy(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
-
-    if n_step is None:
-        n_step = pr.evolution.nb_steps
-
-    # Get the first few data points
-    E = pr.evolution.E[:n_step]
-    # p = pr.evolution.p[:n_step]
-    # V = pr.evolution.V[:n_step]
-    # G = E - p * V
-    G = E
+    data = io.load_trajectory(single_value_names=[Term.energy])
+    energy = data[Term.energy][:nb_steps]
 
     # Non-dimensionalize
-    a = min(pr.formulating.grid.element_sizes)
-    G = G / (a**2)  # NOTE: actually needs to be divided again by 'gamma', but 'gamma' is symbolic so far.
+    unit = min(io.grid.element_sizes)
+    # NOTE: actually needs to be divided again by 'gamma'(surface tension), but 'gamma' is symbolic so far.
+    energy = energy / (unit**2)  
 
     # Plot the x, y, z component of forces
-    steps = np.arange(n_step)
-    ax.plot(steps, G, color="C1", linestyle="-", marker="x", ms=5, mfc="none", label=r"$G$")
+    steps = np.arange(nb_steps)
+    ax.plot(steps, energy, color="C1", linestyle="-", marker="x", ms=5, mfc="none", label=r"$G$")
 
     # Format the plot
     ax.legend(loc='upper right')
@@ -272,103 +274,65 @@ def plot_PSD(ax: plt.Axes):
     ax.grid()
 
 
-def plot_normal_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
-
-    if n_step is None:
-        n_step = pr.evolution.nb_steps
-
-    # Get the first few data points
-    f = pr.evolution.Fz[:n_step-1]
+def plot_normal_force(ax: plt.Axes, io: SimulationIO, nb_steps: int | None = None):
+    data = io.load_trajectory(single_value_names=[Term.energy, Term.separation])
+    energy = data[Term.energy][:nb_steps]
+    displ_z = data[Term.separation][:nb_steps]
+    # numerical difference to get force
+    force = -(energy[1:] - energy[:-1]) / (displ_z[1:] - displ_z[:-1])
 
     # Non-dimensionalize
-    a = min(pr.formulating.grid.element_sizes)
-    f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
+    unit = min(io.grid.element_sizes)
+    force = force / unit  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
     # Plot the x, y, z component of forces
-    steps = np.arange(n_step)
+    steps = np.arange(nb_steps)
     steps = (steps[1:] + steps[:-1]) / 2
-    ax.plot(steps, f, color="b", linestyle="-", marker="o", ms=3, mfc="none", label=r"$F_z$")
+    ax.plot(steps, force, color="b", linestyle="-", marker="o", ms=3, mfc="none", label=r"$F_z$")
 
     # Format the plot
     ax.legend(loc='upper right')
     ax.grid()
 
 
-def plot_perimeter(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
+def plot_pressure(ax: plt.Axes, io: SimulationIO, nb_steps: int=None):
 
-    if n_step is None:
-        n_step = pr.evolution.nb_steps
-
-    # Get the first few data points
-    P = pr.evolution.P[:n_step]
+    data = io.load_trajectory(single_value_names=[Term.pressure])
+    pressure = data[Term.pressure][:nb_steps]
 
     # Non-dimensionalize
-    a = min(pr.formulating.grid.element_sizes)
+    unit = min(io.grid.element_sizes)
+    pressure = pressure * unit
 
     # Plot the x, y, z component of forces
-    steps = np.arange(n_step)
-    ax.plot(steps, P/a, color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$P$")
+    steps = np.arange(nb_steps)
+    ax.plot(steps, pressure, color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$P/\gamma a^{-1}$")
 
     # Format the plot
     ax.legend(loc='upper right')
     ax.grid()
 
 
-# def plot_shear_force(ax: plt.Axes, pr: ProcessedResult, n_step: int=None):
+# def plot_shear_force(ax: plt.Axes, store: SimulationIO, nb_steps: int=None):
 
-#     if n_step is None:
-#         n_step = pr.evolution.nb_steps
+#     if nb_steps is None:
+#         nb_steps = pr.evolution.nb_steps
 
 #     # Get the first few data points
-#     f = pr.evolution.F[:n_step]
+#     f = pr.evolution.F[:nb_steps]
 
 #     # Non-dimensionalize
 #     a = pr.modelling.grid.a
 #     f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
 
 #     # Plot the x, y, z component of forces
-#     steps = np.arange(n_step)
+#     steps = np.arange(nb_steps)
 #     ax.plot(steps, f[:,0], color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$F_x$")
 #     ax.plot(steps, f[:,1], color="g", linestyle="--", marker="^", ms=5, mfc="none", label=r"$F_y$")
 
 #     # Format the plot
 #     ax.legend(loc='upper right')
 #     ax.grid()
-
-
-def plot_force_curves(ax: plt.Axes, pr: ProcessedResult, idx_stop: int=None):
-    """
-    idx_stop: the index to stop; in case of plotting the first few data points.
-    """
-
-    # Get the first 'idx_stop' data
-    r = pr.evolution.r[:idx_stop]
-    f = pr.evolution.F[:idx_stop]
-
-    # Non-dimensionalize by using 'eta'
-    a = min(pr.formulating.grid.element_sizes)
-    r = la.norm(r, axis=-1)
-    r = r / a
-    f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
-
-    # Plot the x, y, z component of forces
-    [l1] = ax.plot(r, f[:,0], color="r", linestyle="-", marker="o", mfc="none", label=r"$f_x$")
-    [l2] = ax.plot(r, f[:,1], color="g", linestyle="--", marker="^", mfc="none", label=r"$f_y$")
-    [l3] = ax.plot(r, f[:,2], color="b", linestyle=":", marker="x", mfc="none", label=r"$f_z$")
-
-    # Format the plot
-    ax.legend(loc='upper right')
-    ax.grid()
-
-    return l1, l2, l3
-
-
-def s(ax: plt.Axes, pr: ProcessedResult):
-    z = pr.evolution.z1
-    z_steps = np.diff(z, prepend=z[0])
-    # TODO: cannot tell "orphan" data points
-    is_pull = z_steps > 0
-    is_push = z_steps < 0
 
 
 def hide_border(ax: plt.Axes):

@@ -48,8 +48,8 @@ def main():
     sweeps = extract_sweeps(config, sweep_section_prefix)
     if sweeps is None:
         switch_log_file(run.log_file)
-        run_one_trip(run, config)
-        create_overview_animation(run.path)
+        io = run_one_trip(run, config)
+        create_overview_animation(run.path, io.grid)
     else:
         nb_subruns = len(sweeps)
         for index, config in enumerate(sweeps.iter_config(config)):
@@ -57,8 +57,8 @@ def main():
             switch_log_file(sub_run.log_file)
             logger.info(f"Run #{index} of {nb_subruns} runs.")
             save_config_to_file(config, sub_run.parameters_dir / f"subrun-{index}.ini")
-            run_one_trip(sub_run, config)
-            create_overview_animation(sub_run.path)
+            io = run_one_trip(sub_run, config)
+            create_overview_animation(sub_run.path, io.grid)
 
 
 def preview_surface_and_gap(
@@ -160,7 +160,7 @@ def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
     #     sim_label = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
     phi_init = random.rand(1, 1, *grid.nb_elements)
     simulation = Simulation(grid, run.results_dir, capi_args, solver_args)
-    simulation.simulate_quasi_static_pull_push(upper, lower, V, phi_init, trajectory)
+    return simulation.simulate_quasi_static_pull_push(upper, lower, V, phi_init, trajectory)
 
     # # post-process
     # with working_directory(run.results_dir, read_only=False) as store:
