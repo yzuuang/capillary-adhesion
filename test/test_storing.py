@@ -6,7 +6,7 @@ import dataclasses as dc
 import numpy as np
 import numpy.random as random
 
-from a_package.utils.data_io import working_directory
+from a_package.data_io import working_directory
 
 
 _rng = random.default_rng()

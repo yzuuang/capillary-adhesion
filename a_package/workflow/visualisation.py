@@ -1,11 +1,7 @@
-import dataclasses as dc
-
 import numpy as np
 import numpy.fft as fft
-import numpy.linalg as la
 import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 
 from a_package.workflow.common import SimulationIO, Term
 from a_package.models import SelfAffineRoughness
@@ -25,28 +21,6 @@ color_solid_phase = "C7"
 # color_vapour_phase = "aliceblue"
 color_liquid_phase = "steelblue"
 color_transition_phase = "lightblue"
-
-
-# @dc.dataclass
-# class DropletData:
-#     """Somewhat flat data with all necessary values for visualizing one capillary state."""
-#     grid: Grid
-#     h1: np.ndarray   # roughness of the 1 plate in 2D-array
-#     h2: np.ndarray   # roughness of the 2 plate in 2D-array
-#     r: np.ndarray    # displacement between the baselines of two plates
-#     g: np.ndarray    # gap
-#     phi: np.ndarray  # phase-field in 2D-array
-
-
-# def get_droplet_data(io: SimulationIO, step: int):
-#     constant = io.load_constant(field_names=[Term.upper_solid, Term.lower_solid])
-#     data = io.load_step(step, field_names=[Term.gap, Term.phase], single_value_names=[Term.separation])
-#     return DropletData(
-#         io.grid, constant[Term.upper_solid],
-#         constant[Term.lower_solid],
-#         data[Term.separation],
-#         data[Term.gap],
-#         data[Term.phase])
 
 
 eps = 1e-2  # cut off value to decide one phase
@@ -311,28 +285,6 @@ def plot_pressure(ax: plt.Axes, io: SimulationIO, nb_steps: int=None):
     # Format the plot
     ax.legend(loc='upper right')
     ax.grid()
-
-
-# def plot_shear_force(ax: plt.Axes, store: SimulationIO, nb_steps: int=None):
-
-#     if nb_steps is None:
-#         nb_steps = pr.evolution.nb_steps
-
-#     # Get the first few data points
-#     f = pr.evolution.F[:nb_steps]
-
-#     # Non-dimensionalize
-#     a = pr.modelling.grid.a
-#     f = f / a  # NOTE: actually needs to be divided by 'eta gamma', but 'gamma' is symbolic so far.
-
-#     # Plot the x, y, z component of forces
-#     steps = np.arange(nb_steps)
-#     ax.plot(steps, f[:,0], color="r", linestyle="-", marker="o", ms=5, mfc="none", label=r"$F_x$")
-#     ax.plot(steps, f[:,1], color="g", linestyle="--", marker="^", ms=5, mfc="none", label=r"$F_y$")
-
-#     # Format the plot
-#     ax.legend(loc='upper right')
-#     ax.grid()
 
 
 def hide_border(ax: plt.Axes):

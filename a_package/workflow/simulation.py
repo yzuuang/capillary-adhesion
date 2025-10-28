@@ -1,33 +1,17 @@
 import logging
 import pathlib
-from dataclasses import dataclass
+import types
 
 import numpy as np
 
 from a_package.field import adapt_shape
 from a_package.grid import Grid
-from a_package.numeric import AugmentedLagrangian
+from a_package.numeric.optimizer import AugmentedLagrangian
 from a_package.workflow.formulation import NodalFormCapillary
 from a_package.workflow.common import SimulationIO, Term
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class SimulationStep:
-    m: tuple[int, int]
-    d: float
-    t_exec: float
-    phi: np.ndarray
-    lam: float
-
-
-@dataclass
-class SimulationResult:
-    formulating: NodalFormCapillary
-    minimising: AugmentedLagrangian
-    steps: list[SimulationStep]
 
 
 class Simulation:
@@ -36,84 +20,150 @@ class Simulation:
             self, grid: Grid, store_dir: pathlib.Path | str, capillary_args: dict = {},
             optimizer_args: dict = {}) -> None:
         self.grid = grid
-        self.store = SimulationIO(self.grid, store_dir)
+        self.store_dir = store_dir
         self.capillary_args = capillary_args
         self.optimizer_args = optimizer_args
 
-    def simulate_quasi_static_pull_push(
-            self, upper: np.ndarray, lower: np.ndarray, volume: float, phase_init: np.ndarray, trajectory: np.ndarray,
-            round_trip: bool = True):
+    def simulate_approach_retraction_with_constant_volume(
+            self, upper: np.ndarray, lower: np.ndarray, volume: float, separation_trajectory: np.ndarray,
+            round_trip: bool = True, phase_init: np.ndarray | None = None, pressure_init: float = 0):
 
-        upper = adapt_shape(upper)
-        lower = adapt_shape(lower)
+        assert upper.shape[-2:] == tuple(self.grid.nb_elements)
+        assert lower.shape[-2:] == tuple(self.grid.nb_elements)
+        assert volume > 0, "Liquid volume must be positive."
 
-        formulation = NodalFormCapillary(self.grid, self.capillary_args)
-        minimiser = AugmentedLagrangian(**self.optimizer_args)
-
-        if round_trip:
-            trajectory = np.concatenate((trajectory, np.flip(trajectory)[1:]))
-        # Truncate to remove floating point errors
+        # Truncate to remove trailing digits due to rounding errors
         nb_decimals = 6
-        trajectory = np.round(trajectory, nb_decimals)
+        separation_trajectory = np.round(separation_trajectory, nb_decimals)
+
+        # add return trip
+        if round_trip:
+            separation_trajectory = np.concatenate([separation_trajectory, np.flip(separation_trajectory)[1:]])
+
+
+        # a random phase as the default initial guess
+        if phase_init is None:
+            phase_init = np.zeros(self.grid.nb_elements)
+
+        # lower-level solvers
+        contact_solver = ContactSolver(self.grid, upper, lower)
+        phase_solver = PhaseSolver(self.grid, self.capillary_args, self.optimizer_args)
+
+        # IO
+        io = SimulationIO(self.grid, self.store_dir)
+        # save initial guess
+        io.save_constant(fields={Term.phase_init: phase_init}, single_values={Term.pressure_init: pressure_init})
+
+        # report = {
+        #     "not_converged": [],
+        #     "iter_limit": [],
+        #     "abnormal_stop": [],
+        # }
 
         # inform
         logger.info(
             f"Problem size: {'x'.join(str(dim) for dim in phase_init.shape)}. "
-            f"Simulating for all {len(trajectory)} mean distance values in...\n{trajectory}"
+            f"Simulating for all {len(separation_trajectory)} mean distance values in...\n{separation_trajectory}"
         )
-        report = {
-            "not_converged": [],
-            "iter_limit": [],
-            "abnormal_stop": [],
-        }
 
-        self.store.save_constant(fields={Term.phase_init: phase_init})
+        # initial guess
+        phase = np.asarray(phase_init)
+        pressure = pressure_init
 
         # simulate
-        x = np.asarray(phase_init)
-        original_shape = x.shape
-        lam = 0.0
-        for index, delta_z in enumerate(trajectory):
+        for [index, separation] in enumerate(separation_trajectory):
             # update the parameter
-            logger.info(f"Parameter of interest: mean distance={delta_z}")
-            gap = np.clip(upper + delta_z - lower, 0, None)
-            formulation.set_gap(gap)
-            formulation.set_phase(x)
-
-            # solve the problem
-            numopt = formulation.create_numopt_with_constant_volume(volume)
-            solver_result = minimiser.solve_minimisation(numopt, x, lam)
+            logger.info(f"Parameter of interest: mean distance={separation}")
+            gap = contact_solver.solve_gap(separation)
+            [phase, pressure] = phase_solver.solve_with_constant_volume(gap, phase, pressure, volume)
 
             # check flags
-            if not solver_result.is_converged:
-                report["not_converged"].append(index)
-            if solver_result.reached_iter_limit:
-                report["iter_limit"].append(index)
-            if solver_result.had_abnormal_stop:
-                report["abnormal_stop"].append(index)
+            # if not solver_result.is_converged:
+            #     report["not_converged"].append(index)
+            # if solver_result.reached_iter_limit:
+            #     report["iter_limit"].append(index)
+            # if solver_result.had_abnormal_stop:
+            #     report["abnormal_stop"].append(index)
 
             # check bonds (feasibility)
-            phase = np.reshape(solver_result.primal, original_shape)
-            formulation.validate_phase_field(phase)
+            phase_solver.check_phase_feasibility(phase)
 
             # save this iteration to storage
-            self.store.save_step(index, fields={Term.upper_solid: upper, Term.lower_solid: lower, Term.gap: gap, 
-                                                Term.phase: phase}, single_values={
-                                 Term.separation: delta_z, Term.pressure: solver_result.dual, 
-                                 Term.energy: formulation.get_energy()})
-
-            # update next iter
-            x = phase
-            lam = solver_result.dual
+            io.save_step(
+                index,
+                fields={Term.upper_solid: contact_solver.upper, Term.lower_solid: contact_solver.lower, Term.gap: gap,
+                        Term.phase: phase},
+                single_values={Term.separation: separation, Term.pressure: pressure, 
+                               Term.energy: phase_solver.formulation.get_energy()})
 
         # report
-        if all(not len(v) for v in report.values()):
-            logger.info("Congrats! All simulation steps went well.")
-        else:
-            logger.warning(f"The following steps may have problems:\n {report}")
+        # if all(not len(v) for v in report.values()):
+        #     logger.info("Congrats! All simulation steps went well.")
+        # else:
+        #     logger.warning(f"The following steps may have problems:\n {report}")
 
         # FIXME: need to return something?
-        return self.store
+        return io
+
+
+class ContactSolver:
+
+    def __init__(self, grid: Grid, upper: np.ndarray, lower: np.ndarray):
+        self.upper = adapt_shape(upper)
+        self.lower = adapt_shape(lower)
+
+    def solve_gap(self, separation: float):
+        return np.clip(separation + self.upper - self.lower, 0, None)
+
+
+class PhaseSolver:
+
+    formulation: NodalFormCapillary
+    optimizer: AugmentedLagrangian
+
+    def __init__(self, grid: Grid, capillary_args, optimizer_args):
+        self.formulation = NodalFormCapillary(grid, capillary_args)
+        self.optimizer = AugmentedLagrangian(**optimizer_args)
+
+    def solve_with_constant_volume(self, gap, phase, pressure, volume):
+        # gap are simply parameters of the optimization problem
+        self.formulation.set_gap(gap)
+
+        # save the original shape
+        original_shape = phase.shape
+
+        # wrap volume constraint into a function
+        def volume_constraint():
+            return self.formulation.get_volume() - volume
+
+        # pack into an object matching the "NumOptEqB" protocol typing
+        problem = types.SimpleNamespace(
+            get_x=self.formulation.get_phase, set_x=self.formulation.set_phase, get_f=self.formulation.get_energy,
+            get_f_Dx=self.formulation.get_energy_jacobian, get_g=volume_constraint,
+            get_g_Dx=self.formulation.get_volume_jacobian, x_lb=self.formulation.phase_lb,
+            x_ub=self.formulation.phase_ub)
+
+        # call the minimizer
+        res = self.optimizer.solve_minimisation(problem, x0=phase, lam0=pressure)
+        phase = np.reshape(res.primal, original_shape)
+        pressure = res.dual
+        return phase, pressure
+
+    def check_phase_feasibility(self, phase: np.ndarray):
+        # check lower bound
+        if np.any(phase < self.formulation.phase_lb):
+            outlier = np.where(phase < self.formulation.phase_lb, phase, np.nan)
+            count = np.count_nonzero(~np.isnan(outlier))
+            extreme = np.nanmin(outlier)
+            logger.warning(
+                f"Notice: phase field has {count} values exceeding lower bound, min at {self.formulation.phase_lb:.1f}-{-extreme:.2e}.")
+        # check upper bound
+        if np.any(phase > self.formulation.phase_ub):
+            outlier = np.where(phase > self.formulation.phase_ub, phase, np.nan)
+            count = np.count_nonzero(~np.isnan(outlier))
+            extreme = np.nanmax(outlier)
+            logger.warning(
+                f"Notice: phase field has {count} values exceeding upper bound, max at  {self.formulation.phase_ub:.1f}+{extreme - 1:.2e}.")
 
 
 # FIXME: sliding
