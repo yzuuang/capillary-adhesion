@@ -100,7 +100,7 @@ def animate_droplet_evolution_with_curves(io: SimulationIO):
 
         plot_pressure(axs[2], io, i_frame + 1)
         axs[2].set_ylim(P_min, P_max)
-        axs[2].set_ylabel(r"Perimeter $P/a$")
+        axs[2].set_ylabel(r"Pressure $P/\gamma_\mathrm{lv} a^{-1}$")
 
         axs[2].set_xlim([0, n_step])
         axs[2].set_xlabel(r"Step (size=$0.1 a$)")
