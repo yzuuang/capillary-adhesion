@@ -1,5 +1,5 @@
 """
-modelling and computing are coupled here.
+a common IO for data exchange between simulation and visualisation.
 """
 
 from enum import StrEnum
@@ -8,7 +8,7 @@ import numpy as np
 
 from a_package.grid import Grid
 from a_package.field import Field
-from a_package.utils.data_io import NpyIO
+from a_package.data_io import NpyIO
 
 
 class SimulationIO:
@@ -126,3 +126,4 @@ class Term(StrEnum):
     energy = "energy"
     perimeter = "perimeter"
     phase_init = "phase_init"
+    pressure_init = "pressure_init"

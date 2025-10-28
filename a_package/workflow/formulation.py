@@ -3,7 +3,6 @@ modelling and computing are coupled here.
 """
 
 import logging
-import types
 
 import numpy as np
 
@@ -23,8 +22,8 @@ class NodalFormCapillary:
     nodal_shape: list[int]
     nodal_gap: Field
     nodal_phase: Field
-    quad_phase: Field
-    quad_phase_gradient: Field
+    quadr_phase: Field
+    quadr_phase_gradient: Field
     bridge: CapillaryBridge
     fem: FirstOrderElement
     quadrature: Quadrature
@@ -34,12 +33,11 @@ class NodalFormCapillary:
     def __init__(self, grid: Grid, capillary_args: dict, quadrature: Quadrature = centroid_gaussian_quadrature):
         self.grid = grid
         self.nodal_shape = [1, 1, *grid.nb_elements]
-        quadr_shape = [1, quadrature.nb_quad_pts, *grid.nb_elements]
 
         self.nodal_gap = np.zeros(self.nodal_shape)
         self.nodal_phase = np.zeros(self.nodal_shape)
-        self.quad_phase = np.zeros(quadr_shape)
-        self.quad_phase_gradient = np.zeros(quadr_shape)
+        self.quadr_phase = np.zeros([])
+        self.quadr_phase_gradient = np.zeros([])
 
         self.bridge = CapillaryBridge(**capillary_args)
         self.fem = FirstOrderElement(grid, quadrature.quad_pt_coords)
@@ -58,7 +56,7 @@ class NodalFormCapillary:
         return self.bridge.gap
 
     @property
-    def in_contact_part(self):
+    def gap_is_closed(self):
         return self.nodal_gap == 0
 
     def get_phase(self):
@@ -74,7 +72,7 @@ class NodalFormCapillary:
 
     def set_phase(self, value):
         # Clean the phase-field where the solid bodies contact
-        value[self.in_contact_part] = 0.
+        value[self.gap_is_closed] = 0.
         self.nodal_phase = value
         # map to quadrature points
         self.quadr_phase = self.fem.interpolate_value(self.nodal_phase)
@@ -82,7 +80,7 @@ class NodalFormCapillary:
         #     [self.fem.interpolate_gradient_x(nodal_phase), self.fem.interpolate_gradient_y(nodal_phase)],
         #     axis=0
         # )
-        self.quadr_phase_grad = self.fem.interpolate_gradient(self.nodal_phase)
+        self.quadr_phase_gradient = self.fem.interpolate_gradient(self.nodal_phase)
 
     def validate_phase_field(self, nodal_phase: Field):
         # check phase field < 0
@@ -99,16 +97,17 @@ class NodalFormCapillary:
             logger.warning(f"Notice: phase field has {count} values > 1, max at 1.0+{extreme - 1:.2e}.")
 
     def get_energy(self):
-        integrand = self.bridge.compute_energy(self.quadr_phase, self.quadr_phase_grad)
+        integrand = self.bridge.compute_energy(self.quadr_phase, self.quadr_phase_gradient)
         return self.quadrature.integrate(self.grid, integrand).item()
 
     def get_energy_jacobian(self):
         [energy_D_phase, energy_D_phase_grad] = self.bridge.compute_energy_jacobian(
-            self.quadr_phase, self.quadr_phase_grad)
+            self.quadr_phase, self.quadr_phase_gradient)
         jacobian = self.fem.propag_sens_value(self.quadrature.propag_integral_weight(
             self.grid, energy_D_phase)) + self.fem.propag_sens_gradient(self.quadrature.propag_integral_weight(
-            self.grid, energy_D_phase_grad))
-        jacobian[self.in_contact_part] = 0
+                self.grid, energy_D_phase_grad))
+        # clean the contact part because there won't be either liquid or vapour
+        jacobian[self.gap_is_closed] = 0
         return jacobian
 
     def get_volume(self):
@@ -118,25 +117,10 @@ class NodalFormCapillary:
     def get_volume_jacobian(self):
         [volume_D_phase] = self.bridge.compute_volume_jacobian(self.quadr_phase)
         jacobian = self.fem.propag_sens_value(self.quadrature.propag_integral_weight(self.grid, volume_D_phase))
-        jacobian[self.in_contact_part] = 0
+        # clean the contact part because there won't be either liquid or vapour
+        jacobian[self.gap_is_closed] = 0
         return jacobian
 
     def get_perimeter(self):
-        integrand = self.bridge.compute_perimeter(self.quadr_phase, self.quadr_phase_grad)
+        integrand = self.bridge.compute_perimeter(self.quadr_phase, self.quadr_phase_gradient)
         return self.quadrature.integrate(self.grid, integrand).item()
-
-    def create_numopt_with_constant_volume(self, volume: float):
-
-        def volume_constraint():
-            return self.get_volume() - volume
-
-        return types.SimpleNamespace(
-            get_x=self.get_phase,
-            set_x=self.set_phase,
-            get_f=self.get_energy,
-            get_f_Dx=self.get_energy_jacobian,
-            get_g=volume_constraint,
-            get_g_Dx=self.get_volume_jacobian,
-            x_lb=self.phase_lb,
-            x_ub=self.phase_ub,
-        )

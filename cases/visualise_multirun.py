@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from a_package.workflow.postprocess import ProcessedResult
 from a_package.utils import working_directory
 from a_package.utils.runtime import RunDir
-from a_package.visualizing import *
+from a_package.workflow.visualisation import *
 
 
 

@@ -154,20 +154,10 @@ def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
     V = formulation.get_volume() * V_percent
 
     # run simulation
-    # with working_directory(run.results_dir, read_only=False) as store:
-    #     # start sim with random initial guess
-    #     phi_init = random.rand(*grid.nb_elements)
-    #     sim_label = simulate_quasi_static_pull_push(store, formulation, solver, V, phi_init, trajectory)
     phi_init = random.rand(1, 1, *grid.nb_elements)
     simulation = Simulation(grid, run.results_dir, capi_args, solver_args)
-    return simulation.simulate_quasi_static_pull_push(upper, lower, V, phi_init, trajectory)
-
-    # # post-process
-    # with working_directory(run.results_dir, read_only=False) as store:
-    #     # load so that every string represented objects are also converted to objects
-    #     sim = store.load(sim_label, SimulationResult)
-    #     p_sim = post_process(sim)
-    #     store.save("final", p_sim)
+    return simulation.simulate_approach_retraction_with_constant_volume(
+        upper, lower, V, trajectory, phase_init=phi_init)
 
 
 if __name__ == "__main__":

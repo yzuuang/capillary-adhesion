@@ -69,19 +69,27 @@ class NumOptEqB(NumOptEq, NumOptB, typing.Protocol):
 
 @dataclass
 class AugmentedLagrangian:
+
     max_inner_iter: int
     max_outer_loop: int
-    tol_convergence: float
-    tol_constraint: float
     init_penalty_weight: float
+    sufficient_constr_dec: float
+    penalty_weight_growth: float
+    tol_convergence: float
+    tol_creeping: float
+    tol_constraint: float
 
-    def __post_init__(self):
-        # terminate if creeping is detected (in unit of machine precision)
-        # only used by inner solver
-        self.tol_creeping = 1e1
-        # parameters deciding how to grow the penalty weight
-        self.sufficient_constr_dec = 1e-2
-        self.penalty_weight_growth = 3e0
+
+    def __init__(self, max_inner_iter=1000, max_outer_loop=50, init_penalty_weight=1e0, sufficient_constr_dec=1e-2,
+                 penalty_weight_growth=3e0, tol_convergence=1e-6, tol_creeping=1e2, tol_constraint=1e-8):
+        self.max_inner_iter = max_inner_iter
+        self.max_outer_loop = max_outer_loop
+        self.init_penalty_weight = init_penalty_weight
+        self.sufficient_constr_dec = sufficient_constr_dec
+        self.penalty_weight_growth = penalty_weight_growth
+        self.tol_convergence = tol_convergence
+        self.tol_creeping = tol_creeping
+        self.tol_constraint = tol_constraint
 
     def solve_minimisation(self, numopt: NumOptEqB, x0: np.ndarray, lam0: float):
         # print headers
@@ -133,8 +141,7 @@ class AugmentedLagrangian:
 
             # get the reformulated / approximated unconstrained problem
             reformed = self.reform_simple_bounds_with_clipping(
-                self.approximate_equality_constraint_with_augmented_lagrangian(numopt, lam, c)
-            )
+                self.approximate_equality_constraint_with_augmented_lagrangian(numopt, lam, c))
 
             # print status before calling inner solver
             numopt.set_x(x)

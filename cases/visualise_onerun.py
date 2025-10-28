@@ -1,11 +1,11 @@
 import os
-import sys
 
 from a_package.workflow.common import SimulationIO
 from a_package.utils.runtime import RunDir
-from a_package.visualizing import *
+from a_package.workflow.visualisation import *
 
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 
 def create_overview_animation(run_path, grid):
