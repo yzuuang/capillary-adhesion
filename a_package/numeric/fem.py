@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.sparse as sparse
+import muGrid
 
 from a_package.grid import Grid
 
@@ -15,6 +16,32 @@ class FirstOrderElement:
     """
 
     def __init__(self, grid: Grid, sub_pt_coords: np.ndarray):
+        self.grid = grid
+        # get the field manager
+        field_collec: muGrid.GlobalFieldCollection = grid.decomposition.collection
+        # create the field to hold values
+        nb_components_nodal = 1
+        self.nodal_value_field = field_collec.real_field("nodal_value", nb_components_nodal)
+        tag = "FEM_quadratrue"
+        field_collec.set_nb_sub_pts(tag, sub_pt_coords.shape[0])
+
+        # create value interpolation operator and necessary fields
+        nb_components_value = 1
+        self.value_interp_out_field = field_collec.real_field("value_interp_out", nb_components_value, tag)
+        self.value_propag_in_field = field_collec.real_field("value_propag_in", nb_components_value, tag)
+        self.value_propag_out_field = field_collec.real_field("value_propag_out", nb_components_value)
+        # self.op_value = GridConvOp(convol_value, nodal_value_field, value_interp_out_field,
+        #                            value_propag_in_field, value_propag_out_field, self.decomposition)
+
+        # create gradient interpolation operator and necessary fields
+        nb_components_gradient = 2
+        self.gradient_interp_out_field = field_collec.real_field("gradient_interp_out", nb_components_gradient, tag)
+        self.gradient_propag_in_field = field_collec.real_field("gradient_propag_in", nb_components_gradient, tag)
+        self.gradient_propag_out_field = field_collec.real_field("gradient_propag_out", nb_components_gradient)
+        # self.op_gradient = GridConvOp(
+        #     convol_gradient, nodal_value_field, gradient_interp_out_field, gradient_propag_in_field,
+        #     gradient_propag_out_field, self.decomposition)
+
         self.grid_shape = grid.nb_elements
         self.nb_sub_pts = sub_pt_coords.shape[0]
 
@@ -71,10 +98,14 @@ class FirstOrderElement:
 
     def interpolate_value(self, data: np.ndarray):
         """Map nodal values to the interpolated values at centroid."""
+        self.nodal_value_field.s = data
+        self.grid.sync_subdomains(self.nodal_value_field)
         return (self.matrix_val @ data.ravel()).reshape(-1, self.nb_sub_pts, *self.grid_shape)
 
     def propag_sens_value(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
+        self.value_propag_in_field.s = data
+        self.grid.sync_subdomains(self.value_propag_in_field)
         return (data.ravel() @ self.matrix_val).reshape(-1, 1, *self.grid_shape)
 
     # def interpolate_gradient_x(self, data: np.ndarray):
@@ -95,10 +126,14 @@ class FirstOrderElement:
 
     def interpolate_gradient(self, data: np.ndarray):
         """Map nodal values to the interpolated gradient values, component in x."""
+        self.nodal_value_field.s = data
+        self.grid.sync_subdomains(self.nodal_value_field)
         return (self.matrix_grad @ data.ravel()).reshape(-1, self.nb_sub_pts, *self.grid_shape)
 
     def propag_sens_gradient(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
+        self.gradient_propag_in_field.s = data
+        self.grid.sync_subdomains(self.gradient_propag_in_field)
         return (data.ravel() @ self.matrix_grad).reshape(-1, 1, *self.grid_shape)
 
 
