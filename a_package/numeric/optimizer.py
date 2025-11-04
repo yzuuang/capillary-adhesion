@@ -94,25 +94,14 @@ class AugmentedLagrangian:
         nabla = "\u2207"
         delta = "\u0394"
         tabel_headers_line1 = ["Loop", "f", f"|Pr({nabla}L)|", "|g|", f"|{delta} lam|", "c"]
-        tabel_headers_line2 = [
-            "Iter",
-            f"|res {nabla}|",
-            "Message",
-        ]
+        tabel_headers_line2 = ["Iter", f"|res {nabla}|", "Message"]
         separator = "  "
-        logger.info(
-            separator.join(
-                "{:<4}".format(col_name) if col_name in ["Loop"] else "{:<8}".format(col_name)
-                for col_name in tabel_headers_line1
-            )
-        )
-        logger.info(
-            separator.join(
-                "{:<4}".format(col_name) if col_name in ["Iter"] else "{:<8}".format(col_name)
-                for col_name in tabel_headers_line2
-            )
-        )
-        logger.info("=" * 50)
+        line_width = 80
+        logger.info(separator.join("{:<4}".format(col_name) if col_name in [
+                    "Loop"] else "{:<8}".format(col_name)for col_name in tabel_headers_line1))
+        logger.info(separator.join("{:<4}".format(col_name) if col_name in [
+                    "Iter"] else "{:<8}".format(col_name)for col_name in tabel_headers_line2))
+        logger.info("=" * line_width)
 
         # initial values
         t_exec = 0
@@ -134,7 +123,7 @@ class AugmentedLagrangian:
             lam = lam_plus
             c = c_plus
 
-            # get the reformulated / approximated unconstrained problem
+            # get the reformulated / approximating unconstrained problem
             reformed = self.reform_simple_bounds_with_clipping(
                 self.approximate_equality_constraint_with_augmented_lagrangian(numopt, lam, c))
 
@@ -144,20 +133,14 @@ class AugmentedLagrangian:
             constr_violation = abs(numopt.get_g())
             reformed.set_x(x)
             norm_lagr_gradient = np.max(abs(reformed.get_f_Dx()))
-            padded_literals = [
-                f"{count:>4d}",
-                f"{obj_value:>8.1e}",
-                f"{norm_lagr_gradient:>8.1e}",
-                f"{constr_violation:>8.1e}",
-                f"{norm_delta_lam:>8.1e}",
-                f"{c:>8.1e}",
-            ]
+            padded_literals = [f"{count:>4d}", f"{obj_value:>8.1e}", f"{norm_lagr_gradient:>8.1e}",
+                               f"{constr_violation:>8.1e}", f"{norm_delta_lam:>8.1e}", f"{c:>8.1e}"]
             logger.info(separator.join(padded_literals))
 
             # convergence criteria
             if norm_lagr_gradient < self.tol_convergence and constr_violation < self.tol_constraint:
                 is_converged = True
-                logger.info(f"Notice: achieving required tolerance at iter#{count}")
+                logger.info(f"Notice: achieving required tolerance at iter #{count}")
                 break
 
             # quit due to reaching maximal loop count
@@ -172,10 +155,10 @@ class AugmentedLagrangian:
             t_exec += t_exec_sub
 
             # print inner solver progress
-            res_norm_grad = np.max(abs(info["grad"]))
-            padded_literals = [f"{info['nit']:>4d}", f"{res_norm_grad:>8.1e}", info["task"]]
+            res_norm_grad = np.max(abs(result["jac"]))
+            padded_literals = [f"{result['nit']:>4d}", f"{res_norm_grad:>8.1e}", result["message"]]
             logger.info(separator.join(padded_literals))
-            logger.info("-" * 50)
+            logger.info("-" * line_width)
 
             # value for new iteration
             x_plus = result["x"]
@@ -195,9 +178,9 @@ class AugmentedLagrangian:
             constr_violation_plus = numopt.get_g()
             lam_plus = lam + c * constr_violation_plus
             # increase penalty weight if the constraint didn't improve enough
-            if not (abs(constr_violation_plus) < self.tol_constraint) and not (
-                abs(constr_violation_plus) < self.sufficient_constr_dec * abs(constr_violation)
-            ):
+            if not (
+                    abs(constr_violation_plus) < self.tol_constraint) and not (
+                    abs(constr_violation_plus) < self.sufficient_constr_dec * abs(constr_violation)):
                 c_plus = c * self.penalty_weight_growth
 
         # show a warning under necessary conditions
@@ -224,12 +207,8 @@ class AugmentedLagrangian:
         def get_augmented_lagrangian_Dx():
             return num_opt.get_f_Dx() + (lam + c * num_opt.get_g()) * num_opt.get_g_Dx()
 
-        reformed = {
-            "get_x": num_opt.get_x,
-            "set_x": num_opt.set_x,
-            "get_f": get_augmented_lagrangian,
-            "get_f_Dx": get_augmented_lagrangian_Dx,
-        }
+        reformed = {"get_x": num_opt.get_x, "set_x": num_opt.set_x,
+                    "get_f": get_augmented_lagrangian, "get_f_Dx": get_augmented_lagrangian_Dx}
         try:
             reformed.update({"x_lb": num_opt.x_lb, "x_ub": num_opt.x_ub})
         except AttributeError:
@@ -253,12 +232,7 @@ class AugmentedLagrangian:
             f_Dx[(x >= num_opt.x_ub) & (f_Dx < 0)] = 0
             return f_Dx
 
-        reformed = {
-            "get_x": num_opt.get_x,
-            "set_x": set_x_clipped,
-            "get_f": num_opt.get_f,
-            "get_f_Dx": get_f_Dx_masked,
-        }
+        reformed = {"get_x": num_opt.get_x, "set_x": set_x_clipped, "get_f": num_opt.get_f, "get_f_Dx": get_f_Dx_masked}
         try:
             reformed.update({"get_g": num_opt.get_g, "get_g_Dx": num_opt.get_g_Dx})
         except AttributeError:
