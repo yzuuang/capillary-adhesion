@@ -10,7 +10,7 @@ from a_package.grid import Grid
 from a_package.field import Field, adapt_shape
 from a_package.models import CapillaryBridge
 from a_package.numeric.fem import FirstOrderElement
-from a_package.numeric.quadrature import Quadrature, centroid_gaussian_quadrature
+from a_package.numeric.quadrature import Quadrature, centroid_quadrature
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class NodalFormCapillary:
     phase_lb: float
     phase_ub: float
 
-    def __init__(self, grid: Grid, capillary_args: dict, quadrature: Quadrature = centroid_gaussian_quadrature):
+    def __init__(self, grid: Grid, capillary_args: dict, quadrature: Quadrature = centroid_quadrature):
         self.grid = grid
         self.nodal_shape = [1, 1, *grid.nb_elements]
 
