@@ -67,7 +67,7 @@ class Simulation:
         )
 
         # initial guess
-        phase = np.asarray(phase_init)
+        phase = np.asarray(phase_init, dtype="float", order="F")
         pressure = pressure_init
 
         # simulate
@@ -109,8 +109,8 @@ class Simulation:
 class ContactSolver:
 
     def __init__(self, grid: Grid, upper: np.ndarray, lower: np.ndarray):
-        self.upper = adapt_shape(upper)
-        self.lower = adapt_shape(lower)
+        self.upper = adapt_shape(np.asarray(upper, dtype=float, order="F"))
+        self.lower = adapt_shape(np.asarray(lower, dtype=float, order="F"))
 
     def solve_gap(self, separation: float):
         return np.clip(separation + self.upper - self.lower, 0, None)

@@ -14,7 +14,7 @@ class Grid:
 
     lengths: tuple[float, ...]
     nb_elements: tuple[int, ...]
-    subdomain_idx: tuple[int, ...]
+    subdomain_base: tuple[int, ...]
 
     def __init__(
             self, lengths: typing.Sequence[float],
@@ -36,6 +36,7 @@ class Grid:
         self.decomposition = muGrid.CartesianDecomposition(
             communicator, nb_elements, nb_subdomains, nb_ghost_layers, nb_ghost_layers)
         self.lengths = tuple(d * n for [d, n] in zip(self.element_sizes, self.nb_elements))
+        self.sync_field: typing.Callable[["muGrid.Field"]] = self.decomposition.communicate_ghosts
 
     @property
     def nb_spatial_dims(self):
@@ -43,16 +44,15 @@ class Grid:
 
     @property
     def nb_elements(self):
-        return tuple(
-            nb_pt - 2 * nb_ghost
-            for [nb_pt, nb_ghost] in zip(self.decomposition.nb_subdomain_grid_pts, self.nb_ghost_layers))
+        return tuple(self.decomposition.nb_subdomain_grid_pts)
 
     @property
-    def subdomain_idx(self):
+    def subdomain_base(self):
         return tuple(self.decomposition.subdomain_locations)
 
-    def sync_subdomains(self, field: "muGrid.Field"):
-        self.decomposition.communicate_ghosts(field)
+    @property
+    def subdomain_slice(self):
+        return (Ellipsis, *(slice(b, b+n) for [b, n] in zip(self.subdomain_base, self.nb_elements)))
 
     def form_index_axis(self, ax_index: int):
         return np.arange(self.nb_elements[ax_index])
