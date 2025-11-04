@@ -6,7 +6,6 @@ import types
 import logging
 import timeit
 import typing
-from dataclasses import dataclass
 
 import numpy as np
 import scipy.optimize
@@ -67,7 +66,6 @@ class NumOptEqB(NumOptEq, NumOptB, typing.Protocol):
     """
 
 
-@dataclass
 class AugmentedLagrangian:
 
     max_inner_iter: int
@@ -78,7 +76,6 @@ class AugmentedLagrangian:
     tol_convergence: float
     tol_creeping: float
     tol_constraint: float
-
 
     def __init__(self, max_inner_iter=1000, max_outer_loop=50, init_penalty_weight=1e0, sufficient_constr_dec=1e-2,
                  penalty_weight_growth=3e0, tol_convergence=1e-6, tol_creeping=1e2, tol_constraint=1e-8):
@@ -127,14 +124,11 @@ class AugmentedLagrangian:
         had_abnormal_stop = False
         lam = lam0  # only for the purpose of printing delta-lam at count=0
 
-        # Loop of augmented lagrangian
-        for count in range(self.max_outer_loop):
+        for count in range(self.max_outer_loop + 1):
             # compute values that must be evaluated before update
             norm_delta_lam = abs(lam_plus - lam)
 
             # update primal, dual and penalty parameter
-            # for primal, clip the solution to fit within the feasible region
-            # x = np.clip(x_plus, numopt.x_lb, numopt.x_ub)
             x = x_plus
             lam = lam_plus
             c = c_plus
@@ -165,6 +159,11 @@ class AugmentedLagrangian:
                 logger.info(f"Notice: achieving required tolerance at iter#{count}")
                 break
 
+            # quit loop due to reaching maximal loop count
+            if count == self.max_outer_loop:
+                reached_iter_limit = True
+                break
+
             # solve minimisation of augmented lagrangian
             t_exec_sub = -timeit.default_timer()
             [x_plus, _, info] = self.solve_unconstrained(reformed, x_plus, x_shape)
@@ -180,7 +179,6 @@ class AugmentedLagrangian:
             # if reaches maximal iterations, simply do another loop to run more iterations
             # only the "x" is updated
             if info["warnflag"] == 1:
-                reached_iter_limit = True
                 continue
             # else if it stops due to some "abnomral" reason
             elif info["warnflag"] == 2:
