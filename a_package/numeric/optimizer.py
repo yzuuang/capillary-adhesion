@@ -9,6 +9,7 @@ import typing
 
 import numpy as np
 import scipy.optimize
+from scipy.optimize import OptimizeResult
 
 
 logger = logging.getLogger(__name__)
@@ -159,14 +160,14 @@ class AugmentedLagrangian:
                 logger.info(f"Notice: achieving required tolerance at iter#{count}")
                 break
 
-            # quit loop due to reaching maximal loop count
+            # quit due to reaching maximal loop count
             if count == self.max_outer_loop:
                 reached_iter_limit = True
                 break
 
             # solve minimisation of augmented lagrangian
             t_exec_sub = -timeit.default_timer()
-            [x_plus, _, info] = self.solve_unconstrained(reformed, x_plus, x_shape)
+            result = self.solve_unconstrained(reformed, x_plus, x_shape)
             t_exec_sub += timeit.default_timer()
             t_exec += t_exec_sub
 
@@ -176,18 +177,22 @@ class AugmentedLagrangian:
             logger.info(separator.join(padded_literals))
             logger.info("-" * 50)
 
-            # if reaches maximal iterations, simply do another loop to run more iterations
-            # only the "x" is updated
-            if info["warnflag"] == 1:
-                continue
-            # else if it stops due to some "abnomral" reason
-            elif info["warnflag"] == 2:
-                had_abnormal_stop = True
-                break
+            # value for new iteration
+            x_plus = result["x"]
+
+            # measures when it fails to achieve convergence
+            if not result["success"]:
+                if result["nit"] >= self.max_inner_iter:
+                    # if reaches maximal inner iterations, as 'x' will be updated, simply do another loop to continue
+                    continue
+                else:
+                    # otherwise, it is most likely an error elsewhere, more loops are not helpful
+                    had_abnormal_stop = True
+                    break
             # else, it achieves convergence
+            # update Lagrangian multiplier following the formula
             numopt.set_x(x_plus)
             constr_violation_plus = numopt.get_g()
-            # update Lagrangian multiplier following the formula
             lam_plus = lam + c * constr_violation_plus
             # increase penalty weight if the constraint didn't improve enough
             if not (abs(constr_violation_plus) < self.tol_constraint) and not (
@@ -287,7 +292,11 @@ class AugmentedLagrangian:
         )
 
         numopt.set_x(np.reshape(x_plus, x_shape))
-        return [numopt.get_x(), f_plus, info]
+        return OptimizeResult(
+            success=info["warnflag"] == 0, x=numopt.get_x(),
+            fun=f_plus, jac=info["grad"],
+            nit=info["nit"],
+            message=info["task"])
 
 
 class SolverResult(typing.NamedTuple):
