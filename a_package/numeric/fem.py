@@ -36,8 +36,8 @@ class FirstOrderElement:
         blocks = []
         for sub_pt_coeffs in val_interp_coeffs:
             sub_pt_matrix = sparse.lil_matrix((MN, MN), dtype=float)
-            for [i_pt, coeff] in sub_pt_coeffs.items():
-                fill_cyclic_diagonal_pseudo_2d(sub_pt_matrix, i_pt, (M, N), coeff)
+            for [node_idxs, coeff] in sub_pt_coeffs.items():
+                fill_cyclic_diagonal_pseudo_2d(sub_pt_matrix, node_idxs, (M, N), coeff)
             blocks.append(sub_pt_matrix)
         self.matrix_val = sparse.vstack(blocks, format="csr")
 
@@ -61,17 +61,12 @@ class FirstOrderElement:
 
         # mapping nodal value to the gradient at target points
         blocks = []
-        for sub_pt_coeffs in grad_interp_coeffs:
-            # x component
-            sub_pt_matrix = sparse.lil_matrix((MN, MN), dtype=float)
-            for [i_pt, coeff] in sub_pt_coeffs['x'].items():
-                fill_cyclic_diagonal_pseudo_2d(sub_pt_matrix, i_pt, (M, N), coeff)
-            blocks.append(sub_pt_matrix / grid.element_sizes[0])
-            # y component
-            sub_pt_matrix = sparse.lil_matrix((MN, MN), dtype=float)
-            for [i_pt, coeff] in sub_pt_coeffs['y'].items():
-                fill_cyclic_diagonal_pseudo_2d(sub_pt_matrix, i_pt, (M, N), coeff)
-            blocks.append(sub_pt_matrix / grid.element_sizes[1])
+        for [compon_idx, compon_name] in enumerate(['x', 'y']):
+            for sub_pt_coeffs in grad_interp_coeffs:
+                sub_pt_matrix = sparse.lil_matrix((MN, MN), dtype=float)
+                for [node_idxs, coeff] in sub_pt_coeffs[compon_name].items():
+                    fill_cyclic_diagonal_pseudo_2d(sub_pt_matrix, node_idxs, (M, N), coeff)
+                blocks.append(sub_pt_matrix / grid.element_sizes[compon_idx])
         self.matrix_grad = sparse.vstack(blocks, format="csr")
 
     def interpolate_value(self, data: np.ndarray):
@@ -199,7 +194,7 @@ class LinearFiniteElementPixel:
         #     [0, 1 - x1],
         #     [1 - x2, x1 + x2 - 1],
         # ]
-        return {(1, 1): x1 + x2 - 1, (1, 0): 1 - x1, (0, 1): 1 - x2}
+        return {(1, 1): x1 + x2 - 1, (1, 0): 1 - x2, (0, 1): 1 - x1}
 
     def compute_gradient_interpolation_coefficients(self, target_pts):
         # check points are inside a unit pixel
