@@ -64,6 +64,7 @@ class ReferenceFirstOrderElement:
 
         grad_interp_coeffs = fe_pixel.compute_gradient_interpolation_coefficients(target_pts)
         sub_matrices = []
+        # NumPy defaults to row-major, hence the hierarchy of for-loops.
         for [_, coeffs] in enumerate(grad_interp_coeffs):
             sub_matrix_x1 = sparse.lil_matrix((nb_total_elements, nb_total_elements), dtype=float)
             for [nodal_idxs, weight] in coeffs["x1"].items():
@@ -77,16 +78,16 @@ class ReferenceFirstOrderElement:
         self.gradient_op_matrix = sparse.vstack(sub_matrices, format="csr")
 
     def interpolate_value(self, field: np.ndarray):
-        return (self.value_op_matrix @ field.ravel()).reshape(-1, self.nb_target_pts, *self.field_shape)
+        return (self.value_op_matrix @ field.ravel()).reshape(-1, self.nb_target_pts, *self.field_shape, order="C")
 
     def interpolate_gradient(self, field: np.ndarray):
-        return (self.gradient_op_matrix @ field.ravel()).reshape(-1, self.nb_target_pts, *self.field_shape)
+        return (self.gradient_op_matrix @ field.ravel()).reshape(-1, self.nb_target_pts, *self.field_shape, order="C")
 
     def propag_sens_value(self, field: np.ndarray):
-        return (field.ravel() @ self.value_op_matrix).reshape(-1, *self.field_shape)
+        return (field.ravel() @ self.value_op_matrix).reshape(-1, *self.field_shape, order="C")
 
     def propag_sens_gradient(self, field: np.ndarray):
-        return (field.ravel() @ self.gradient_op_matrix).reshape(-1, *self.field_shape)
+        return (field.ravel() @ self.gradient_op_matrix).reshape(-1, *self.field_shape, order="C")
 
     @staticmethod
     def fill_cyclic_diagonal_pseudo_2d(
