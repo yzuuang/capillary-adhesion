@@ -63,28 +63,28 @@ class FirstOrderElement:
         self.nodal_value_field.s = adapt_shape(data)
         self.grid.sync_field(self.nodal_value_field)
         self.op_value.apply(self.nodal_value_field, self.value_interp_out_field)
-        return self.value_interp_out_field.s
+        return self.value_interp_out_field.s.copy()
 
     def propag_sens_value(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
         self.value_propag_in_field.s = adapt_shape(data)
         self.grid.sync_field(self.value_propag_in_field)
         self.op_value.transpose(self.value_propag_in_field, self.value_propag_out_field)
-        return self.value_propag_out_field.s
+        return self.value_propag_out_field.s.copy()
 
     def interpolate_gradient(self, data: np.ndarray):
         """Map nodal values to the interpolated gradient values, component in x."""
         self.nodal_value_field.s = adapt_shape(data)
         self.grid.sync_field(self.nodal_value_field)
         self.op_gradient.apply(self.nodal_value_field, self.gradient_interp_out_field)
-        return self.gradient_interp_out_field.s
+        return self.gradient_interp_out_field.s.copy()
 
     def propag_sens_gradient(self, data: np.ndarray):
         """Propogate the sensitivity of corresponding interpolation backward."""
         self.gradient_propag_in_field.s = adapt_shape(data)
         self.grid.sync_field(self.gradient_propag_in_field)
         self.op_gradient.transpose(self.gradient_propag_in_field, self.gradient_propag_out_field)
-        return self.gradient_propag_out_field.s
+        return self.gradient_propag_out_field.s.copy()
 
 
 class LinearFiniteElementPixel:
