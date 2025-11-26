@@ -2,7 +2,11 @@
 a common IO for data exchange between simulation and visualisation.
 """
 
-from enum import StrEnum
+import sys
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from backports.strenum import StrEnum
 
 import numpy as np
 
