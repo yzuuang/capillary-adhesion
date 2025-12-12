@@ -4,10 +4,11 @@ from configparser import ConfigParser
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.workflow.postprocess import ProcessedResult
-from a_package.utils import working_directory
-from a_package.utils.runtime import RunDir
-from a_package.workflow.visualisation import *
+# TODO: postprocess module and working_directory have been removed/reorganized
+# from a_package.simulation.postprocess import ProcessedResult  # FIXME: module does not exist
+# from a_package.runtime import working_directory  # FIXME: not implemented
+from a_package.runtime.dirs import RunDir
+from a_package.simulation.visualisation import *
 
 
 

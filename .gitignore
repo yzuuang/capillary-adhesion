@@ -1,6 +1,6 @@
 # Temporary files
 *~
-**/runtime
+/runtime
 
 # Python related
 *.pyc

@@ -1,3 +1,13 @@
+"""
+Load-unload simulation case.
+
+Usage:
+    python -m cases.load_unload config.toml [config2.toml ...]
+
+The first config file provides base parameters. Additional config files
+can override specific values (useful for sweep specifications).
+"""
+
 import os
 import sys
 import logging
@@ -7,20 +17,21 @@ import matplotlib.animation as ani
 import numpy as np
 import numpy.random as random
 
-from a_package.workflow.formulation import NodalFormCapillary
-from a_package.workflow.simulation import Simulation
-from a_package.utils.runtime import RunDir, register_run
-from a_package.utils.logging import reset_logging, switch_log_file
-
-from cases.configs import (
-    read_config_files,
-    save_config_to_file,
-    extract_sweeps,
-    create_grid,
-    match_shape_and_get_height,
-    get_capillary_args,
-    get_optimizer_args,
+from a_package.config import load_config, save_config, expand_sweeps, count_sweep_combinations, Config
+from a_package.grid import Grid
+from a_package.physics.surfaces import generate_surface
+from a_package.simulation.formulation import NodalFormCapillary
+from a_package.simulation.simulation import Simulation
+from a_package.simulation.runner import (
+    create_grid_from_config,
+    build_capillary_args,
+    build_solver_args,
+    build_trajectory,
+    compute_liquid_volume,
 )
+from a_package.runtime.dirs import RunDir, register_run
+from a_package.runtime.logging import reset_logging, switch_log_file
+
 from cases.visualise_onerun import create_overview_animation
 
 
@@ -30,57 +41,53 @@ logger = logging.getLogger(__name__)
 
 def main():
     reset_logging()
-    config_files = sys.argv[1:]
-    config = read_config_files(config_files)
+
+    if len(sys.argv) < 2:
+        print("Usage: python -m cases.load_unload config.toml")
+        sys.exit(1)
+
+    config_file = sys.argv[1]
+    config = load_config(config_file)
 
     # visual check
     if show_me_preview:
-        preview_surface_and_gap(config["Grid"], config["UpperSurface"], config["LowerSurface"], config["Trajectory"])
+        preview_surface_and_gap(config)
 
     # setup run directory
     case_name = os.path.splitext(os.path.basename(__file__))[0]
-    shape_name = f'{config["UpperSurface"]["shape"]}-over-{config["LowerSurface"]["shape"]}'
+    shape_name = f'{config.geometry.upper.shape}-over-{config.geometry.lower.shape}'
     base_dir = os.path.join(case_name, shape_name)
-    run = register_run(base_dir, __file__, *config_files)
+    run = register_run(base_dir, __file__, config_file)
 
     # check if parameter sweep is specified in config
-    sweep_section_prefix = "ParameterSweep"
-    sweeps = extract_sweeps(config, sweep_section_prefix)
-    if sweeps is None:
+    nb_configs = count_sweep_combinations(config)
+    if nb_configs == 1:
+        # No sweeps, single run
         switch_log_file(run.log_file)
         io = run_one_trip(run, config)
         create_overview_animation(run.path, io.grid)
     else:
-        nb_subruns = len(sweeps)
-        for index, config in enumerate(sweeps.iter_config(config)):
+        # Parameter sweep
+        for index, expanded_config in enumerate(expand_sweeps(config)):
             sub_run = register_run(run.intermediate_dir, __file__, with_hash=False)
             switch_log_file(sub_run.log_file)
-            logger.info(f"Run #{index} of {nb_subruns} runs.")
-            save_config_to_file(config, sub_run.parameters_dir / f"subrun-{index}.ini")
-            io = run_one_trip(sub_run, config)
+            logger.info(f"Run #{index + 1} of {nb_configs} runs.")
+            # Save the expanded config for reproducibility
+            save_config(expanded_config, sub_run.parameters_dir / f"subrun-{index}.toml")
+            io = run_one_trip(sub_run, expanded_config)
             create_overview_animation(sub_run.path, io.grid)
 
 
-def preview_surface_and_gap(
-    grid_params: dict[str, str],
-    upper_surface_params: dict[str, str],
-    lower_surface_params: dict[str, str],
-    trajectory_params: dict[str, str],
-):
+def preview_surface_and_gap(config: Config):
     """A visual check before running simulations."""
-    # get values from params
-    grid = create_grid(grid_params)
-    h1 = match_shape_and_get_height(grid, upper_surface_params)
-    h0 = match_shape_and_get_height(grid, lower_surface_params)
-    d_min = float(trajectory_params["min_separation"])
-    d_max = float(trajectory_params["max_separation"])
-    d_step = float(trajectory_params["step_size"])
-    nb_steps = round((d_max - d_min) / d_step) + 1
-    trajectory = np.linspace(d_max, d_min, nb_steps)
+    grid = create_grid_from_config(config)
+    h1 = generate_surface(grid, config.geometry.upper.shape, config.geometry.upper.params)
+    h0 = generate_surface(grid, config.geometry.lower.shape, config.geometry.lower.params)
+    trajectory = build_trajectory(config)
 
     # create the figure and axes
     fig = plt.figure(figsize=(12, 5), constrained_layout=True)
-    ax1 = fig.add_subplot(1, 2, 1, projection="3d")  # subplotkw={'projection': '3d'})
+    ax1 = fig.add_subplot(1, 2, 1, projection="3d")
     ax2 = fig.add_subplot(1, 2, 2)
 
     def update_frame(i_frame: int):
@@ -112,6 +119,7 @@ def preview_surface_and_gap(
         return *ax1.images, *ax2.images
 
     # draw the animation
+    nb_steps = len(trajectory)
     _ = ani.FuncAnimation(fig, update_frame, nb_steps, interval=200, repeat_delay=3000)
 
     # allow to exit if it does not look right
@@ -121,43 +129,32 @@ def preview_surface_and_gap(
         sys.exit(0)
 
 
-def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
+def run_one_trip(run: RunDir, config: Config):
+    """Run a single simulation with given configuration."""
+    # Grid
+    grid = create_grid_from_config(config)
 
-    # grid
-    grid = create_grid(config["Grid"])
+    # Surfaces
+    upper = generate_surface(grid, config.geometry.upper.shape, config.geometry.upper.params)
+    lower = generate_surface(grid, config.geometry.lower.shape, config.geometry.lower.params)
 
-    # surfaces
-    upper = match_shape_and_get_height(grid, config["UpperSurface"])
-    lower = match_shape_and_get_height(grid, config["LowerSurface"])
+    # Trajectory
+    trajectory = build_trajectory(config)
 
-    # trajectory
-    d_min = float(config["Trajectory"]["min_separation"])
-    d_max = float(config["Trajectory"]["max_separation"])
-    d_step = float(config["Trajectory"]["step_size"])
-    nb_steps = round((d_max - d_min) / d_step) + 1
-    trajectory = np.linspace(d_max, d_min, nb_steps)
+    # Capillary model args
+    capi_args = build_capillary_args(config)
 
-    # capillary model
-    capi_args = get_capillary_args(config["Capillary"])
+    # Solver args
+    solver_args = build_solver_args(config)
 
-    # solver
-    solver_args = get_optimizer_args(config["Solver"])
+    # Liquid volume from percentage specification
+    volume = compute_liquid_volume(grid, config, upper, lower, capi_args, trajectory)
 
-    # liquid volume from a percentage specification
-    formulation = NodalFormCapillary(grid, capi_args)
-    z1 = np.amin(trajectory)
-    gap = np.clip(upper + z1 - lower, 0, None)
-    formulation.set_gap(gap)
-    full_liquid = np.ones([1, 1, *grid.nb_elements])
-    formulation.set_phase(full_liquid)
-    V_percent = 0.01 * float(config["Capillary"]["liquid_volume_percent"])
-    V = formulation.get_volume() * V_percent
-
-    # run simulation
+    # Run simulation
     phi_init = random.rand(1, 1, *grid.nb_elements)
     simulation = Simulation(grid, run.results_dir, capi_args, solver_args)
     return simulation.simulate_approach_retraction_with_constant_volume(
-        upper, lower, V, trajectory, phase_init=phi_init)
+        upper, lower, volume, trajectory, phase_init=phi_init)
 
 
 if __name__ == "__main__":

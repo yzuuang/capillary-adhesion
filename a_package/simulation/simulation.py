@@ -6,9 +6,9 @@ import numpy as np
 
 from a_package.field import adapt_shape
 from a_package.grid import Grid
-from a_package.numeric.optimizer import AugmentedLagrangian
-from a_package.workflow.formulation import NodalFormCapillary
-from a_package.workflow.common import SimulationIO, Term
+from a_package.numerics.optimizer import AugmentedLagrangian
+from a_package.simulation.formulation import NodalFormCapillary
+from a_package.simulation.io import SimulationIO, Term
 
 
 logger = logging.getLogger(__name__)

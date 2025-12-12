@@ -3,8 +3,8 @@ import numpy.fft as fft
 import matplotlib
 import matplotlib.pyplot as plt
 
-from a_package.workflow.common import SimulationIO, Term
-from a_package.models import SelfAffineRoughness
+from a_package.simulation.io import SimulationIO, Term
+from a_package.physics.models import SelfAffineRoughness
 from a_package.grid import Grid
 
 

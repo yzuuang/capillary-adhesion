@@ -1,6 +1,6 @@
 import numpy as np
 
-from a_package.numeric.fem import LinearFiniteElementPixel
+from a_package.numerics.fem import LinearFiniteElementPixel
 
 
 def test_value_interpolation_coefficients():

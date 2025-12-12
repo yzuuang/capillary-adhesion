@@ -1,7 +1,8 @@
 """
-a common IO for data exchange between simulation and visualisation.
+IO for data exchange between simulation and visualisation.
 """
 
+import pathlib
 import sys
 if sys.version_info >= (3, 11):
     from enum import StrEnum
@@ -11,8 +12,38 @@ else:
 import numpy as np
 
 from a_package.grid import Grid
-from a_package.field import Field
-from a_package.data_io import NpyIO
+from a_package.field import Field, adapt_shape
+
+
+class NpyIO:
+
+    root_path: pathlib.Path
+    extension: str
+
+    def __init__(self, root_path):
+        self.root_path = pathlib.Path(root_path)
+
+    @property
+    def extension(self):
+        return "npy"
+
+    def load_field(self, grid: Grid, name: str):
+        try:
+            return np.load(self.root_path / f"{name}.{self.extension}", allow_pickle=False)
+        except FileNotFoundError:
+            return adapt_shape(np.atleast_2d([]))
+
+    def save_field(self, grid: Grid, name: str, field: Field):
+        np.save(self.root_path / f"{name}.{self.extension}", field)
+
+    def load_value_array(self, name: str):
+        try:
+            return np.load(self.root_path / f"{name}.{self.extension}", allow_pickle=False)
+        except FileNotFoundError:
+            return np.array([])
+
+    def save_value_array(self, name: str, array: np.ndarray):
+        np.save(self.root_path / f"{name}.{self.extension}", array)
 
 
 class SimulationIO:
@@ -76,7 +107,7 @@ class SimulationIO:
 
     def save_trajectory(self, fields: dict[str, list[Field]]={}, single_values: dict[str, np.ndarray]={}):
         result = {}
-        # For field, every step is saved in one file. 
+        # For field, every step is saved in one file.
         for [name, traj] in fields.items():
             array = FieldArray(self.grid, self.io, name)
             for index in range(len(traj)):
@@ -87,7 +118,7 @@ class SimulationIO:
 
     def load_trajectory(self, field_names: list[str]=[], single_value_names: list[str]=[]):
         result = {}
-        # For field, every step is saved in one file. 
+        # For field, every step is saved in one file.
         for name in field_names:
             result[name] = FieldArray(self.grid, self.io, name)
         # For single values, a trajectory is saved as one file
@@ -99,7 +130,7 @@ class SimulationIO:
 class FieldArray:
     """A helper calss. It mimics an array but actually read / write corresponding files."""
 
-    grid: Grid    
+    grid: Grid
     io: NpyIO
     name: str
 

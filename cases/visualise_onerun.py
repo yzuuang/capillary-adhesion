@@ -1,8 +1,8 @@
 import os
 
-from a_package.workflow.common import SimulationIO
-from a_package.utils.runtime import RunDir
-from a_package.workflow.visualisation import *
+from a_package.simulation.io import SimulationIO
+from a_package.runtime.dirs import RunDir
+from a_package.simulation.visualisation import *
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
