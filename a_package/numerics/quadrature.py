@@ -1,7 +1,6 @@
 import numpy as np
 
-from a_package.grid import Grid
-from a_package.field import Field, field_element_axs
+from a_package.domain import Grid, Field, field_element_axs
 
 
 class Quadrature:

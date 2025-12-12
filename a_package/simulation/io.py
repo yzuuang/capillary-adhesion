@@ -11,8 +11,7 @@ else:
 
 import numpy as np
 
-from a_package.grid import Grid
-from a_package.field import Field, adapt_shape
+from a_package.domain import Grid, Field, adapt_shape
 
 
 class NpyIO:

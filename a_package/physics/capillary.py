@@ -10,7 +10,7 @@ import dataclasses as dc
 
 import numpy as np
 
-from a_package.field import Field, field_component_ax
+from a_package.domain import Field, field_component_ax
 
 
 @dc.dataclass(init=True)

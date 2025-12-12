@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 from a_package.simulation.io import SimulationIO, Term
 from a_package.physics.surfaces import SelfAffineRoughness
-from a_package.grid import Grid
+from a_package.domain import Grid
 
 
 # Setup for colours

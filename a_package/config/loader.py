@@ -6,7 +6,6 @@ and tomli_w for writing.
 """
 
 import sys
-from dataclasses import fields, asdict
 from pathlib import Path
 from typing import Any
 
@@ -23,11 +22,6 @@ from .schema import (
     GeometryConfig,
     GridConfig,
     SurfaceConfig,
-    FlatSurface,
-    TipSurface,
-    SinusoidSurface,
-    RoughSurface,
-    PatternSurface,
     PhysicsConfig,
     CapillaryConfig,
     SimulationConfig,
@@ -35,19 +29,6 @@ from .schema import (
     SolverConfig,
     SweepConfig,
 )
-
-
-# Mapping from shape name to surface dataclass
-_surface_classes = {
-    "flat": FlatSurface,
-    "tip": TipSurface,
-    "sinusoid": SinusoidSurface,
-    "rough": RoughSurface,
-    "pattern": PatternSurface,
-}
-
-# Reverse mapping from dataclass to shape name
-_surface_names = {cls: name for name, cls in _surface_classes.items()}
 
 
 def load_config(path: str | Path) -> Config:
@@ -118,26 +99,19 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
 
 
 def _parse_surface(surface_data: dict[str, Any]) -> SurfaceConfig:
-    """Parse surface configuration by dispatching to the correct dataclass."""
+    """Parse surface configuration into generic SurfaceConfig."""
     # Make a copy to avoid modifying the original
     data = dict(surface_data)
     shape = data.pop("shape")
-
-    if shape not in _surface_classes:
-        raise ValueError(f"Unknown surface shape: {shape}. "
-                         f"Available: {list(_surface_classes.keys())}")
-
-    cls = _surface_classes[shape]
-    return cls(**data)
+    # Remaining keys are the parameters
+    return SurfaceConfig(shape=shape, params=data)
 
 
 def _surface_to_dict(surface: SurfaceConfig) -> dict[str, Any]:
     """Convert a surface config to a dict with shape field."""
-    shape = _surface_names[type(surface)]
-    data = asdict(surface)
     # Remove None values for cleaner TOML output
-    data = {k: v for k, v in data.items() if v is not None}
-    return {"shape": shape, **data}
+    params = {k: v for k, v in surface.params.items() if v is not None}
+    return {"shape": surface.shape, **params}
 
 
 def _config_to_dict(config: Config) -> dict[str, Any]:
@@ -192,4 +166,4 @@ def _config_to_dict(config: Config) -> dict[str, Any]:
 
 def get_surface_shape(surface: SurfaceConfig) -> str:
     """Get the shape name for a surface config object."""
-    return _surface_names[type(surface)]
+    return surface.shape

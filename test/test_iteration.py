@@ -10,7 +10,7 @@ import timeit
 import numpy as np
 from threadpoolctl import threadpool_limits
 
-from a_package.grid import Grid
+from a_package.domain import Grid
 from a_package.simulation.formulation import NodalFormCapillary
 from a_package.numerics.quadrature import centroid_quadrature
 

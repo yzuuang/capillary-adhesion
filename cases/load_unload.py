@@ -17,8 +17,8 @@ import matplotlib.animation as ani
 import numpy as np
 import numpy.random as random
 
-from a_package.config import load_config, save_config, expand_sweeps, count_sweep_combinations, Config, get_surface_shape
-from a_package.grid import Grid
+from a_package.config import load_config, save_config, expand_sweeps, count_sweep_combinations, get_surface_shape, Config
+from a_package.domain import Grid
 from a_package.physics.surfaces import generate_surface
 from a_package.simulation.formulation import NodalFormCapillary
 from a_package.simulation.simulation import Simulation
@@ -83,8 +83,8 @@ def main():
 def preview_surface_and_gap(config: Config):
     """A visual check before running simulations."""
     grid = create_grid_from_config(config)
-    h1 = generate_surface(grid, config.geometry.upper)
-    h0 = generate_surface(grid, config.geometry.lower)
+    h1 = generate_surface(grid, config.geometry.upper.shape, **config.geometry.upper.params)
+    h0 = generate_surface(grid, config.geometry.lower.shape, **config.geometry.lower.params)
     trajectory = build_trajectory(config)
 
     # create the figure and axes
@@ -136,9 +136,9 @@ def run_one_trip(run: RunDir, config: Config):
     # Grid
     grid = create_grid_from_config(config)
 
-    # Surfaces
-    upper = generate_surface(grid, config.geometry.upper)
-    lower = generate_surface(grid, config.geometry.lower)
+    # Surfaces (bridge config -> physics primitives)
+    upper = generate_surface(grid, config.geometry.upper.shape, **config.geometry.upper.params)
+    lower = generate_surface(grid, config.geometry.lower.shape, **config.geometry.lower.params)
 
     # Trajectory
     trajectory = build_trajectory(config)

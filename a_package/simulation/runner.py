@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import numpy.random as random
 
-from a_package.grid import Grid
+from a_package.domain import Grid
 from a_package.config import Config
 from a_package.physics.surfaces import generate_surface
 from a_package.simulation.simulation import Simulation
@@ -48,9 +48,13 @@ def run_simulation(config: Config, output_dir: str | pathlib.Path) -> Simulation
     # Create grid
     grid = create_grid_from_config(config)
 
-    # Generate surfaces
-    upper = generate_surface(grid, config.geometry.upper)
-    lower = generate_surface(grid, config.geometry.lower)
+    # Generate surfaces (bridge config -> physics primitives)
+    upper = generate_surface(
+        grid, config.geometry.upper.shape, **config.geometry.upper.params
+    )
+    lower = generate_surface(
+        grid, config.geometry.lower.shape, **config.geometry.lower.params
+    )
 
     # Build capillary arguments
     capillary_args = build_capillary_args(config)

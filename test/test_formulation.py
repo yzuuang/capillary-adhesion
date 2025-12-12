@@ -8,9 +8,8 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.field import adapt_shape
+from a_package.domain import Grid, adapt_shape
 from a_package.simulation.formulation import NodalFormCapillary
-from a_package.grid import Grid
 
 
 show_me_plot = True

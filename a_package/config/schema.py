@@ -19,50 +19,25 @@ class GridConfig:
     nb_pixels: int
 
 
-# Surface type dataclasses
 @dataclass
-class FlatSurface:
-    """Flat surface at constant height."""
-    constant: float = 0.0
+class SurfaceConfig:
+    """
+    Generic surface configuration.
 
+    Surface types are identified by shape string, with type-specific
+    parameters stored in params dict. This keeps config decoupled from
+    physics implementation.
 
-@dataclass
-class TipSurface:
-    """Spherical tip surface."""
-    radius: float
-
-
-@dataclass
-class SinusoidSurface:
-    """Sinusoidal surface."""
-    wavenumber: float
-    amplitude: float
-
-
-@dataclass
-class RoughSurface:
-    """Self-affine rough surface from PSD."""
-    prefactor: float
-    rolloff_wavelength_pixels: float
-    cutoff_wavelength_pixels: float
-    hurst_exponent: float
-    seed: int | None = None
-
-
-@dataclass
-class PatternSurface:
-    """Multi-scale wave pattern surface."""
-    tip_center_x: float = 0.0
-    tip_center_y: float = 0.0
-    wave_len_L: float | None = None
-    wave_amp_L: float | None = None
-    wave_len_M: float | None = None
-    wave_amp_M: float | None = None
-    wave_len_S: float | None = None
-    wave_amp_S: float | None = None
-
-
-SurfaceConfig = FlatSurface | TipSurface | SinusoidSurface | RoughSurface | PatternSurface
+    Supported shapes and their parameters:
+    - "flat": constant (default: 0.0)
+    - "tip": radius
+    - "sinusoid": wavenumber, amplitude
+    - "rough": prefactor, rolloff_wavelength_pixels, cutoff_wavelength_pixels,
+               hurst_exponent, seed (optional)
+    - "pattern": tip_center_x, tip_center_y, wave_len_L, wave_amp_L, etc.
+    """
+    shape: str
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
