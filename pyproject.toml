@@ -15,14 +15,13 @@ classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Programming Language :: Python"
 ]
-requires-python = ">=3.9.0"
+requires-python = ">=3.10.0"
 dynamic = [ "version" ]
 dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
     # backports
-    "typing_extensions; python_version < '3.10'",
     "backports.strenum; python_version < '3.11'"
 ]
 
