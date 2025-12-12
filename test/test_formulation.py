@@ -65,7 +65,7 @@ def test_energy_jacobian_in_formulation():
             phi[tuple(indices)] = original_value - delta
             capillary.set_phase(phi)
             minus_val = capillary.get_energy()
-            numeric_jacobian[i, *indices] = 0.5 * (plus_val - minus_val) / delta
+            numeric_jacobian[(i, *indices)] = 0.5 * (plus_val - minus_val) / delta
             # recover the original value
             phi[tuple(indices)] = original_value
 
