@@ -32,4 +32,11 @@ class Quadrature:
 
 centroid_quadrature = Quadrature(np.array([[1 / 3, 1 / 3], [2 / 3, 2 / 3]]), np.array([0.5, 0.5]))
 """Numerical quadrature with points located at the centroid of the two triangular elements of each pixel."""
-three_pt_quadrature = Quadrature(np.array([[1/6, 4/6], [1/6, 1/6], [4/6, 1/6]]), np.array([1/3, 1/3, 1/3]))
+three_pt_quadrature = Quadrature(
+    np.array([[1 / 6, 4 / 6],
+              [1 / 6, 1 / 6],
+              [4 / 6, 1 / 6],
+              [2 / 6, 5 / 6],
+              [5 / 6, 5 / 6],
+              [5 / 6, 2 / 6]]),
+    np.array([1 / 3, 1 / 3, 1 / 3, 1 / 3, 1 / 3, 1 / 3]))
