@@ -12,7 +12,6 @@ prefactor = 1e5
 rolloff_wavelength_pixels = 64.0
 cutoff_wavelength_pixels = 8.0
 hurst_exponent = 0.95
-seed = 99318550417889485522932502715565421756
 
 [geometry.lower]
 shape = "rough"
@@ -20,7 +19,6 @@ prefactor = 1e5
 rolloff_wavelength_pixels = 64.0
 cutoff_wavelength_pixels = 8.0
 hurst_exponent = 0.95
-seed = 140604288244288101198983542134930785488
 
 [physics]
 [physics.capillary]
