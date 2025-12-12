@@ -8,7 +8,7 @@ import numpy as np
 
 from a_package.grid import Grid
 from a_package.field import Field, adapt_shape
-from a_package.physics.models import CapillaryBridge
+from a_package.physics.capillary import CapillaryBridge
 from a_package.numerics.fem import FirstOrderElement
 from a_package.numerics.quadrature import Quadrature, centroid_quadrature
 

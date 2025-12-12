@@ -1,2 +1,2 @@
-from .models import CapillaryBridge, SelfAffineRoughness, psd_to_height
-from .surfaces import generate_surface
+from .capillary import CapillaryBridge
+from .surfaces import generate_surface, SelfAffineRoughness, psd_to_height

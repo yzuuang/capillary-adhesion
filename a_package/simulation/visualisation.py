@@ -4,7 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 from a_package.simulation.io import SimulationIO, Term
-from a_package.physics.models import SelfAffineRoughness
+from a_package.physics.surfaces import SelfAffineRoughness
 from a_package.grid import Grid
 
 
