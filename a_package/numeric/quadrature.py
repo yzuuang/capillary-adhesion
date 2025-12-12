@@ -2,6 +2,7 @@ import numpy as np
 
 from a_package.grid import Grid
 from a_package.field import Field, field_element_axs
+from a_package.communicator import communicator
 
 
 class Quadrature:
@@ -24,7 +25,8 @@ class Quadrature:
     def integrate(self, grid: Grid, field: Field):
         # Due to regular grid, it is possible to factor out the element area
         element_sum = grid.element_area * np.sum(field, axis=field_element_axs)
-        return np.einsum("s, cs-> c", self.quad_pt_weights, element_sum)
+        grid_sum = np.einsum("s, cs-> c", self.quad_pt_weights, element_sum)
+        return communicator.sum(grid_sum)
 
     def propag_integral_weight(self, grid: Grid, field: Field):
         return grid.element_area * np.einsum("s, cs...-> cs...", self.quad_pt_weights, field)

@@ -67,7 +67,7 @@ class Simulation:
         )
 
         # initial guess
-        phase = np.asarray(phase_init)
+        phase = np.asarray(phase_init, dtype="float", order="F")
         pressure = pressure_init
 
         # simulate
