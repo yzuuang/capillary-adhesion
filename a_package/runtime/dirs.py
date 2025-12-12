@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 repo_root = os.getenv("PYTHONPATH", os.getcwd())
-runtime_dirname = "runtime"
+results_dirname = "results"
 
 
 def register_run(base_dir_path, script_path, *param_paths, runtime_root=None, with_hash: bool = True):
@@ -19,7 +19,7 @@ def register_run(base_dir_path, script_path, *param_paths, runtime_root=None, wi
 
     # default
     if runtime_root is None:
-        runtime_root = os.path.join(repo_root, runtime_dirname)
+        runtime_root = os.path.join(repo_root, results_dirname)
 
     # get current time
     current_time = time.localtime()
@@ -67,7 +67,7 @@ def retrieve_run(base_dir_path, run_id, runtime_root=None):
 
     # default
     if runtime_root is None:
-        runtime_root = os.path.join(repo_root, runtime_dirname)
+        runtime_root = os.path.join(repo_root, results_dirname)
 
     # get the dedicated folder
     run_dir_path = os.path.join(runtime_root, base_dir_path, run_id)

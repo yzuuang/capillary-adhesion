@@ -1,93 +1,18 @@
 """
-Black-box simulation runner.
+Simulation setup from configuration.
 
-Provides a simple interface: config in -> results out.
-
-This module is the orchestration layer that bridges config (raw dicts) to
-physics/numerics classes. All semantic knowledge of parameter translation
-lives here.
+Helper functions that translate config (raw dicts) to simulation primitives.
+All semantic knowledge of parameter translation lives here.
 """
 
-import logging
-import pathlib
 from typing import Any
 
 import numpy as np
-import numpy.random as random
 
 from a_package.domain import Grid
 from a_package.config import Config
 from a_package.physics.surfaces import generate_surface
-from a_package.simulation.simulation import Simulation
 from a_package.simulation.formulation import NodalFormCapillary
-from a_package.simulation.io import SimulationIO
-
-
-logger = logging.getLogger(__name__)
-
-
-def run_simulation(config: Config, output_dir: str | pathlib.Path) -> SimulationIO:
-    """
-    Run a simulation from a configuration.
-
-    This is the main entry point for black-box simulation execution.
-    Takes a config object and output directory, runs the full simulation,
-    and returns the IO object for accessing results.
-
-    Parameters
-    ----------
-    config : Config
-        Complete simulation configuration.
-    output_dir : str | Path
-        Directory to store simulation results.
-
-    Returns
-    -------
-    SimulationIO
-        IO object for accessing saved results.
-    """
-    output_dir = pathlib.Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Create grid
-    grid = create_grid_from_config(config)
-
-    # Generate surfaces (bridge config -> physics primitives)
-    upper = generate_surface_from_config(grid, config.physics["upper"])
-    lower = generate_surface_from_config(grid, config.physics["lower"])
-
-    # Build capillary arguments
-    capillary_args = build_capillary_args(config)
-
-    # Build solver arguments
-    solver_args = build_solver_args(config)
-
-    # Build trajectory
-    trajectory = build_trajectory(config)
-
-    # Random initial phase field
-    rng = random.default_rng()
-    phase_init = rng.random((1, 1, *grid.nb_elements))
-
-    # Create simulation
-    logger.info(f"Starting simulation with output to {output_dir}")
-    simulation = Simulation(grid, output_dir, capillary_args, solver_args)
-
-    # Dispatch based on constraint type
-    constraint_cfg = config.simulation["constraint"]
-    constraint_type = constraint_cfg["type"]
-
-    if constraint_type == "constant_volume":
-        volume = compute_liquid_volume(
-            grid, constraint_cfg, upper, lower, capillary_args, trajectory
-        )
-        io = simulation.run_with_constant_volume(
-            upper, lower, trajectory, volume, phase_init=phase_init
-        )
-    else:
-        raise ValueError(f"Unknown constraint type: {constraint_type}")
-
-    return io
 
 
 def create_grid_from_config(config: Config) -> Grid:

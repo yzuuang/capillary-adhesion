@@ -127,12 +127,10 @@ class Simulation:
     def __init__(
         self,
         grid: Grid,
-        store_dir: pathlib.Path | str,
         capillary_args: dict,
         optimizer_args: dict,
     ):
         self.grid = grid
-        self.store_dir = store_dir
         self.capillary_args = capillary_args
         self.optimizer_args = optimizer_args
 
@@ -142,6 +140,7 @@ class Simulation:
         lower: np.ndarray,
         trajectory: np.ndarray,
         volume: float,
+        store_dir: pathlib.Path | str,
         phase_init: np.ndarray | None = None,
         pressure_init: float = 0,
     ) -> SimulationIO:
@@ -158,6 +157,8 @@ class Simulation:
             Array of separation values to simulate.
         volume : float
             Target liquid volume to maintain.
+        store_dir : Path | str
+            Directory to store simulation results.
         phase_init : np.ndarray, optional
             Initial guess for phase field. Zeros if not provided.
         pressure_init : float, optional
@@ -184,7 +185,7 @@ class Simulation:
         phase_solver = PhaseSolver(self.grid, self.capillary_args, self.optimizer_args)
 
         # IO
-        io = SimulationIO(self.grid, self.store_dir)
+        io = SimulationIO(self.grid, store_dir)
         io.save_constant(
             fields={Term.phase_init: phase_init},
             single_values={Term.pressure_init: pressure_init},
