@@ -31,10 +31,10 @@ def load_config(path: str | Path) -> Config:
     sweeps = data.pop("sweep", [])
 
     return Config(
-        domain=data.get("domain", {}),
-        physics=data.get("physics", {}),
-        numerics=data.get("numerics", {}),
-        simulation=data.get("simulation", {}),
+        domain=data["domain"],
+        physics=data["physics"],
+        numerics=data["numerics"],
+        simulation=data["simulation"],
         sweeps=sweeps,
     )
 

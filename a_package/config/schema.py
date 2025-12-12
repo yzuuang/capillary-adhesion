@@ -27,6 +27,6 @@ class Config:
     """
     domain: dict[str, Any]
     physics: dict[str, Any]
-    numerics: dict[str, Any]
     simulation: dict[str, Any]
+    numerics: dict[str, Any] = field(default_factory=dict)
     sweeps: list[dict[str, Any]] = field(default_factory=list)
