@@ -1,8 +1,9 @@
 """
-IO for data exchange between simulation and visualisation.
+IO for simulation data exchange.
+
+Provides simulation-aware persistence built on top of domain/io.py.
 """
 
-import pathlib
 import sys
 if sys.version_info >= (3, 11):
     from enum import StrEnum
@@ -11,38 +12,7 @@ else:
 
 import numpy as np
 
-from a_package.domain import Grid, Field, adapt_shape
-
-
-class NpyIO:
-
-    root_path: pathlib.Path
-    extension: str
-
-    def __init__(self, root_path):
-        self.root_path = pathlib.Path(root_path)
-
-    @property
-    def extension(self):
-        return "npy"
-
-    def load_field(self, grid: Grid, name: str):
-        try:
-            return np.load(self.root_path / f"{name}.{self.extension}", allow_pickle=False)
-        except FileNotFoundError:
-            return adapt_shape(np.atleast_2d([]))
-
-    def save_field(self, grid: Grid, name: str, field: Field):
-        np.save(self.root_path / f"{name}.{self.extension}", field)
-
-    def load_value_array(self, name: str):
-        try:
-            return np.load(self.root_path / f"{name}.{self.extension}", allow_pickle=False)
-        except FileNotFoundError:
-            return np.array([])
-
-    def save_value_array(self, name: str, array: np.ndarray):
-        np.save(self.root_path / f"{name}.{self.extension}", array)
+from a_package.domain import Grid, Field, NpyIO
 
 
 class SimulationIO:
@@ -127,13 +97,18 @@ class SimulationIO:
 
 
 class FieldArray:
-    """A helper calss. It mimics an array but actually read / write corresponding files."""
+    """
+    Lazy-loading array that reads/writes fields on demand.
+
+    Mimics an array interface but each index access triggers file I/O.
+    Useful for large trajectories that don't fit in memory.
+    """
 
     grid: Grid
     io: NpyIO
     name: str
 
-    def __init__(self, grid, io, name) -> None:
+    def __init__(self, grid: Grid, io: NpyIO, name: str) -> None:
         self.grid = grid
         self.io = io
         self.name = name
@@ -145,7 +120,8 @@ class FieldArray:
         self.io.save_field(self.grid, format_filename(self.name, index), value)
 
 
-def format_filename(name: str, index: int):
+def format_filename(name: str, index: int) -> str:
+    """Format a filename with step index."""
     return f"{name}--{index}"
 
 
