@@ -12,6 +12,11 @@ from .schema import (
     GeometryConfig,
     GridConfig,
     SurfaceConfig,
+    FlatSurface,
+    TipSurface,
+    SinusoidSurface,
+    RoughSurface,
+    PatternSurface,
     PhysicsConfig,
     CapillaryConfig,
     SimulationConfig,
@@ -20,7 +25,7 @@ from .schema import (
     SweepConfig,
 )
 
-from .loader import load_config, save_config
+from .loader import load_config, save_config, get_surface_shape
 
 from .sweep import expand_sweeps, count_sweep_combinations
 
@@ -30,6 +35,11 @@ __all__ = [
     "GeometryConfig",
     "GridConfig",
     "SurfaceConfig",
+    "FlatSurface",
+    "TipSurface",
+    "SinusoidSurface",
+    "RoughSurface",
+    "PatternSurface",
     "PhysicsConfig",
     "CapillaryConfig",
     "SimulationConfig",
@@ -39,6 +49,7 @@ __all__ = [
     # Loader functions
     "load_config",
     "save_config",
+    "get_surface_shape",
     # Sweep functions
     "expand_sweeps",
     "count_sweep_combinations",

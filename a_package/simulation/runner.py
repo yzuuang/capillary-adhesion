@@ -49,16 +49,8 @@ def run_simulation(config: Config, output_dir: str | pathlib.Path) -> Simulation
     grid = create_grid_from_config(config)
 
     # Generate surfaces
-    upper = generate_surface(
-        grid,
-        config.geometry.upper.shape,
-        config.geometry.upper.params,
-    )
-    lower = generate_surface(
-        grid,
-        config.geometry.lower.shape,
-        config.geometry.lower.params,
-    )
+    upper = generate_surface(grid, config.geometry.upper)
+    lower = generate_surface(grid, config.geometry.lower)
 
     # Build capillary arguments
     capillary_args = build_capillary_args(config)

@@ -13,10 +13,13 @@ from a_package.config import (
     save_config,
     expand_sweeps,
     count_sweep_combinations,
+    get_surface_shape,
     Config,
     GeometryConfig,
     GridConfig,
-    SurfaceConfig,
+    FlatSurface,
+    TipSurface,
+    SinusoidSurface,
     PhysicsConfig,
     CapillaryConfig,
     SimulationConfig,
@@ -122,9 +125,11 @@ def test_load_config(temp_toml_file):
     assert isinstance(config, Config)
     assert config.geometry.grid.pixel_size == 0.05
     assert config.geometry.grid.nb_pixels == 64
-    assert config.geometry.upper.shape == "tip"
-    assert config.geometry.upper.params["radius"] == 10.0
-    assert config.geometry.lower.shape == "flat"
+    assert isinstance(config.geometry.upper, TipSurface)
+    assert config.geometry.upper.radius == 10.0
+    assert isinstance(config.geometry.lower, FlatSurface)
+    assert get_surface_shape(config.geometry.upper) == "tip"
+    assert get_surface_shape(config.geometry.lower) == "flat"
     assert config.physics.capillary.contact_angle_degree == 45.0
     assert config.simulation.trajectory.step_size == 0.01
     assert config.simulation.solver.max_nb_iters == 1000
@@ -142,7 +147,7 @@ def test_save_and_reload_config(temp_toml_file):
         reloaded = load_config(output_path)
 
         assert reloaded.geometry.grid.pixel_size == config.geometry.grid.pixel_size
-        assert reloaded.geometry.upper.shape == config.geometry.upper.shape
+        assert get_surface_shape(reloaded.geometry.upper) == get_surface_shape(config.geometry.upper)
         assert reloaded.physics.capillary.liquid_volume_percent == config.physics.capillary.liquid_volume_percent
     finally:
         os.unlink(output_path)
@@ -189,8 +194,8 @@ def test_expand_sweeps_with_multiple_sweeps():
     config = Config(
         geometry=GeometryConfig(
             grid=GridConfig(pixel_size=0.05, nb_pixels=64),
-            upper=SurfaceConfig(shape="tip", params={"radius": 10.0}),
-            lower=SurfaceConfig(shape="flat", params={"constant": 0.0}),
+            upper=TipSurface(radius=10.0),
+            lower=FlatSurface(constant=0.0),
         ),
         physics=PhysicsConfig(
             capillary=CapillaryConfig(
@@ -221,7 +226,8 @@ def test_expand_sweeps_with_multiple_sweeps():
 def test_generate_surface_flat():
     """Test flat surface generation."""
     grid = Grid([1.0, 1.0], [32, 32])
-    height = generate_surface(grid, "flat", {"constant": 0.5})
+    surface = FlatSurface(constant=0.5)
+    height = generate_surface(grid, surface)
 
     assert height.shape == (32, 32)
     np.testing.assert_array_almost_equal(height, 0.5 * np.ones((32, 32)))
@@ -230,7 +236,8 @@ def test_generate_surface_flat():
 def test_generate_surface_tip():
     """Test tip surface generation."""
     grid = Grid([1.0, 1.0], [32, 32])
-    height = generate_surface(grid, "tip", {"radius": 10.0})
+    surface = TipSurface(radius=10.0)
+    height = generate_surface(grid, surface)
 
     assert height.shape == (32, 32)
     # Minimum should be at center, value should be 0
@@ -241,15 +248,20 @@ def test_generate_surface_tip():
 def test_generate_surface_sinusoid():
     """Test sinusoidal surface generation."""
     grid = Grid([1.0, 1.0], [32, 32])
-    height = generate_surface(grid, "sinusoid", {"wavenumber": 2.0, "amplitude": 0.1})
+    surface = SinusoidSurface(wavenumber=2.0, amplitude=0.1)
+    height = generate_surface(grid, surface)
 
     assert height.shape == (32, 32)
     assert np.max(height) <= 0.1
     assert np.min(height) >= -0.1
 
 
-def test_generate_surface_unknown_shape():
-    """Test that unknown shape raises error."""
+def test_generate_surface_unknown_type():
+    """Test that unknown surface type raises error."""
     grid = Grid([1.0, 1.0], [32, 32])
-    with pytest.raises(ValueError, match="Unknown surface shape"):
-        generate_surface(grid, "unknown", {})
+
+    class UnknownSurface:
+        pass
+
+    with pytest.raises(ValueError, match="Unknown surface type"):
+        generate_surface(grid, UnknownSurface())

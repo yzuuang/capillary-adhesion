@@ -1,0 +1,50 @@
+# Parameter sweep: varying tip center location
+# Tip over pattern surface with 2D sweep on tip center coordinates
+
+[geometry]
+[geometry.grid]
+pixel_size = 0.001
+nb_pixels = 256
+
+[geometry.upper]
+shape = "tip"
+radius = 2.0
+
+[geometry.lower]
+shape = "pattern"
+wave_len_L = 19.5
+wave_len_M = 3.12
+wave_len_S = 0.5
+wave_amp_L = 0.01
+wave_amp_M = 0.004
+wave_amp_S = 0.0015
+tip_center_x = 0.0  # Base value, will be swept
+tip_center_y = 0.0  # Base value, will be swept
+
+[physics]
+[physics.capillary]
+interface_thickness = 0.001
+contact_angle_degree = 60.0
+liquid_volume_percent = 50.0
+
+[simulation]
+[simulation.trajectory]
+min_separation = 0.001
+max_separation = 0.030
+step_size = 0.001
+
+[simulation.solver]
+max_nb_iters = 1000
+max_nb_loops = 50
+tol_convergence = 1e-6
+tol_constraints = 1e-8
+init_penalty_weight = 0.1
+
+# Sweep specifications (2D grid)
+[[sweep]]
+path = "geometry.lower.params.tip_center_x"
+linspace = [0.0, 0.128, 4]
+
+[[sweep]]
+path = "geometry.lower.params.tip_center_y"
+linspace = [0.0, 0.128, 4]

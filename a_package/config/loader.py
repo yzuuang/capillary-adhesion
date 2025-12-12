@@ -6,6 +6,7 @@ and tomli_w for writing.
 """
 
 import sys
+from dataclasses import fields, asdict
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,11 @@ from .schema import (
     GeometryConfig,
     GridConfig,
     SurfaceConfig,
+    FlatSurface,
+    TipSurface,
+    SinusoidSurface,
+    RoughSurface,
+    PatternSurface,
     PhysicsConfig,
     CapillaryConfig,
     SimulationConfig,
@@ -29,6 +35,19 @@ from .schema import (
     SolverConfig,
     SweepConfig,
 )
+
+
+# Mapping from shape name to surface dataclass
+_surface_classes = {
+    "flat": FlatSurface,
+    "tip": TipSurface,
+    "sinusoid": SinusoidSurface,
+    "rough": RoughSurface,
+    "pattern": PatternSurface,
+}
+
+# Reverse mapping from dataclass to shape name
+_surface_names = {cls: name for name, cls in _surface_classes.items()}
 
 
 def load_config(path: str | Path) -> Config:
@@ -99,27 +118,38 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
 
 
 def _parse_surface(surface_data: dict[str, Any]) -> SurfaceConfig:
-    """Parse surface configuration, extracting shape and shape-specific params."""
-    shape = surface_data["shape"]
-    # All keys except 'shape' are shape-specific parameters
-    params = {k: v for k, v in surface_data.items() if k != "shape"}
-    return SurfaceConfig(shape=shape, params=params)
+    """Parse surface configuration by dispatching to the correct dataclass."""
+    # Make a copy to avoid modifying the original
+    data = dict(surface_data)
+    shape = data.pop("shape")
+
+    if shape not in _surface_classes:
+        raise ValueError(f"Unknown surface shape: {shape}. "
+                         f"Available: {list(_surface_classes.keys())}")
+
+    cls = _surface_classes[shape]
+    return cls(**data)
+
+
+def _surface_to_dict(surface: SurfaceConfig) -> dict[str, Any]:
+    """Convert a surface config to a dict with shape field."""
+    shape = _surface_names[type(surface)]
+    data = asdict(surface)
+    # Remove None values for cleaner TOML output
+    data = {k: v for k, v in data.items() if v is not None}
+    return {"shape": shape, **data}
 
 
 def _config_to_dict(config: Config) -> dict[str, Any]:
     """Convert a Config object to a dictionary (for TOML serialization)."""
-    # Build geometry section
-    upper_dict = {"shape": config.geometry.upper.shape, **config.geometry.upper.params}
-    lower_dict = {"shape": config.geometry.lower.shape, **config.geometry.lower.params}
-
     data = {
         "geometry": {
             "grid": {
                 "pixel_size": config.geometry.grid.pixel_size,
                 "nb_pixels": config.geometry.grid.nb_pixels,
             },
-            "upper": upper_dict,
-            "lower": lower_dict,
+            "upper": _surface_to_dict(config.geometry.upper),
+            "lower": _surface_to_dict(config.geometry.lower),
         },
         "physics": {
             "capillary": {
@@ -158,3 +188,8 @@ def _config_to_dict(config: Config) -> dict[str, Any]:
             data["sweep"].append(sweep_dict)
 
     return data
+
+
+def get_surface_shape(surface: SurfaceConfig) -> str:
+    """Get the shape name for a surface config object."""
+    return _surface_names[type(surface)]
