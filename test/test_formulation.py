@@ -12,7 +12,7 @@ from a_package.domain import Grid, adapt_shape
 from a_package.simulation.formulation import NodalFormCapillary
 
 
-show_me_plot = True
+show_me_plot = False
 
 
 def test_energy_jacobian_in_formulation():

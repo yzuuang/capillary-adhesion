@@ -24,6 +24,7 @@ from a_package.simulation.formulation import NodalFormCapillary
 from a_package.simulation.simulation import Simulation
 from a_package.simulation.runner import (
     create_grid_from_config,
+    generate_surface_from_config,
     build_capillary_args,
     build_solver_args,
     build_trajectory,
@@ -55,8 +56,8 @@ def main():
 
     # setup run directory
     case_name = os.path.splitext(os.path.basename(__file__))[0]
-    upper_shape = get_surface_shape(config.geometry.upper)
-    lower_shape = get_surface_shape(config.geometry.lower)
+    upper_shape = get_surface_shape(config, "upper")
+    lower_shape = get_surface_shape(config, "lower")
     shape_name = f'{upper_shape}-on-{lower_shape}'
     base_dir = os.path.join(case_name, shape_name)
     run = register_run(base_dir, __file__, config_file)
@@ -83,8 +84,8 @@ def main():
 def preview_surface_and_gap(config: Config):
     """A visual check before running simulations."""
     grid = create_grid_from_config(config)
-    h1 = generate_surface(grid, config.geometry.upper.shape, **config.geometry.upper.params)
-    h0 = generate_surface(grid, config.geometry.lower.shape, **config.geometry.lower.params)
+    h1 = generate_surface_from_config(grid, config.domain["upper"])
+    h0 = generate_surface_from_config(grid, config.domain["lower"])
     trajectory = build_trajectory(config)
 
     # create the figure and axes
@@ -137,8 +138,8 @@ def run_one_trip(run: RunDir, config: Config):
     grid = create_grid_from_config(config)
 
     # Surfaces (bridge config -> physics primitives)
-    upper = generate_surface(grid, config.geometry.upper.shape, **config.geometry.upper.params)
-    lower = generate_surface(grid, config.geometry.lower.shape, **config.geometry.lower.params)
+    upper = generate_surface_from_config(grid, config.domain["upper"])
+    lower = generate_surface_from_config(grid, config.domain["lower"])
 
     # Trajectory
     trajectory = build_trajectory(config)

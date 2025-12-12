@@ -2,6 +2,10 @@
 Black-box simulation runner.
 
 Provides a simple interface: config in -> results out.
+
+This module is the orchestration layer that bridges config (raw dicts) to
+physics/numerics classes. All semantic knowledge of parameter translation
+lives here.
 """
 
 import logging
@@ -49,12 +53,8 @@ def run_simulation(config: Config, output_dir: str | pathlib.Path) -> Simulation
     grid = create_grid_from_config(config)
 
     # Generate surfaces (bridge config -> physics primitives)
-    upper = generate_surface(
-        grid, config.geometry.upper.shape, **config.geometry.upper.params
-    )
-    lower = generate_surface(
-        grid, config.geometry.lower.shape, **config.geometry.lower.params
-    )
+    upper = generate_surface_from_config(grid, config.physics["upper"])
+    lower = generate_surface_from_config(grid, config.physics["lower"])
 
     # Build capillary arguments
     capillary_args = build_capillary_args(config)
@@ -84,37 +84,63 @@ def run_simulation(config: Config, output_dir: str | pathlib.Path) -> Simulation
 
 def create_grid_from_config(config: Config) -> Grid:
     """Create a Grid from configuration."""
-    a = config.geometry.grid.pixel_size
-    N = config.geometry.grid.nb_pixels
+    grid_cfg = config.domain["grid"]
+    a = grid_cfg["pixel_size"]
+    N = grid_cfg["nb_pixels"]
     L = a * N
     return Grid([L, L], [N, N])
 
 
+def generate_surface_from_config(grid: Grid, surface_cfg: dict[str, Any]) -> np.ndarray:
+    """
+    Generate a surface from configuration dict.
+
+    Extracts shape and passes remaining params to generate_surface.
+    """
+    cfg = dict(surface_cfg)  # copy to avoid mutation
+    shape = cfg.pop("shape")
+    return generate_surface(grid, shape, **cfg)
+
+
 def build_capillary_args(config: Config) -> dict[str, Any]:
-    """Build capillary model arguments from configuration."""
-    theta = (np.pi / 180) * config.physics.capillary.contact_angle_degree
-    eta = config.physics.capillary.interface_thickness
+    """
+    Build capillary model arguments from configuration.
+
+    Translates user-facing config parameters to physics class parameters:
+    - contact_angle_degree -> theta (radians)
+    - interface_thickness -> eta
+    """
+    capillary = config.physics["capillary"]
+    theta = (np.pi / 180) * capillary["contact_angle_degree"]
+    eta = capillary["interface_thickness"]
     return {"eta": eta, "theta": theta}
 
 
 def build_solver_args(config: Config) -> dict[str, Any]:
-    """Build solver arguments from configuration."""
-    solver = config.simulation.solver
+    """
+    Build solver arguments from configuration.
+
+    Translates user-facing config parameters to solver class parameters:
+    - max_nb_iters -> max_inner_iter
+    - max_nb_loops -> max_outer_loop
+    - tol_constraints -> tol_constraint
+    """
+    solver = config.numerics["solver"]
     return {
-        "max_inner_iter": solver.max_nb_iters,
-        "max_outer_loop": solver.max_nb_loops,
-        "tol_convergence": solver.tol_convergence,
-        "tol_constraint": solver.tol_constraints,
-        "init_penalty_weight": solver.init_penalty_weight,
+        "max_inner_iter": solver["max_nb_iters"],
+        "max_outer_loop": solver["max_nb_loops"],
+        "tol_convergence": solver["tol_convergence"],
+        "tol_constraint": solver["tol_constraints"],
+        "init_penalty_weight": solver["init_penalty_weight"],
     }
 
 
 def build_trajectory(config: Config) -> np.ndarray:
     """Build separation trajectory from configuration."""
-    traj = config.simulation.trajectory
-    d_min = traj.min_separation
-    d_max = traj.max_separation
-    d_step = traj.step_size
+    traj = config.simulation["trajectory"]
+    d_min = traj["min_separation"]
+    d_max = traj["max_separation"]
+    d_step = traj["step_size"]
     nb_steps = round((d_max - d_min) / d_step) + 1
     # Start from max (approach), go to min
     return np.linspace(d_max, d_min, nb_steps)
@@ -145,5 +171,5 @@ def compute_liquid_volume(
     formulation.set_phase(full_liquid)
 
     # Compute volume as percentage of full
-    V_percent = 0.01 * config.physics.capillary.liquid_volume_percent
+    V_percent = 0.01 * config.physics["capillary"]["liquid_volume_percent"]
     return formulation.get_volume() * V_percent

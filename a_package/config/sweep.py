@@ -12,7 +12,7 @@ from typing import Any, Iterator
 
 import numpy as np
 
-from .schema import Config, SweepConfig
+from .schema import Config
 
 
 def expand_sweeps(config: Config) -> Iterator[Config]:
@@ -40,7 +40,7 @@ def expand_sweeps(config: Config) -> Iterator[Config]:
     sweep_values: list[tuple[str, list[Any]]] = []
     for sweep in config.sweeps:
         values = _expand_sweep_values(sweep)
-        sweep_values.append((sweep.path, values))
+        sweep_values.append((sweep["path"], values))
 
     # Compute the Cartesian product of all sweep parameters
     paths = [path for path, _ in sweep_values]
@@ -54,18 +54,18 @@ def expand_sweeps(config: Config) -> Iterator[Config]:
         yield new_config
 
 
-def _expand_sweep_values(sweep: SweepConfig) -> list[Any]:
+def _expand_sweep_values(sweep: dict[str, Any]) -> list[Any]:
     """Convert sweep specification to list of values."""
-    if sweep.linspace is not None:
-        start, stop, num = sweep.linspace
+    if "linspace" in sweep:
+        start, stop, num = sweep["linspace"]
         return np.linspace(start, stop, int(num)).tolist()
-    elif sweep.logspace is not None:
-        start, stop, num = sweep.logspace
+    elif "logspace" in sweep:
+        start, stop, num = sweep["logspace"]
         return np.logspace(start, stop, int(num)).tolist()
-    elif sweep.values is not None:
-        return list(sweep.values)
+    elif "values" in sweep:
+        return list(sweep["values"])
     else:
-        raise ValueError(f"Sweep at path '{sweep.path}' has no values specified. "
+        raise ValueError(f"Sweep at path '{sweep.get('path', '?')}' has no values specified. "
                          "Use linspace, logspace, or values.")
 
 
@@ -75,35 +75,42 @@ def _apply_values(config: Config, paths: list[str], values: tuple[Any, ...]) -> 
     new_config = copy.deepcopy(config)
 
     for path, value in zip(paths, values):
-        _set_nested_attr(new_config, path, value)
+        _set_nested_value(new_config, path, value)
 
     return new_config
 
 
-def _set_nested_attr(obj: Any, path: str, value: Any) -> None:
+def _set_nested_value(config: Config, path: str, value: Any) -> None:
     """
-    Set a nested attribute using dot notation.
+    Set a nested value using dot notation.
+
+    The first part of the path is a Config attribute (domain, physics, etc.),
+    the rest navigates through nested dicts.
 
     Example: path="physics.capillary.contact_angle_degree" sets
-             obj.physics.capillary.contact_angle_degree = value
+             config.physics["capillary"]["contact_angle_degree"] = value
     """
     parts = path.split(".")
-    # Navigate to the parent object
-    for part in parts[:-1]:
-        obj = getattr(obj, part)
-    # Set the final attribute
-    setattr(obj, parts[-1], value)
+    # First part is a Config attribute
+    obj = getattr(config, parts[0])
+    # Navigate through nested dicts
+    for part in parts[1:-1]:
+        obj = obj[part]
+    # Set the final value
+    obj[parts[-1]] = value
 
 
-def _get_nested_attr(obj: Any, path: str) -> Any:
+def _get_nested_value(config: Config, path: str) -> Any:
     """
-    Get a nested attribute using dot notation.
+    Get a nested value using dot notation.
 
     Example: path="physics.capillary.contact_angle_degree" returns
-             obj.physics.capillary.contact_angle_degree
+             config.physics["capillary"]["contact_angle_degree"]
     """
-    for part in path.split("."):
-        obj = getattr(obj, part)
+    parts = path.split(".")
+    obj = getattr(config, parts[0])
+    for part in parts[1:]:
+        obj = obj[part]
     return obj
 
 

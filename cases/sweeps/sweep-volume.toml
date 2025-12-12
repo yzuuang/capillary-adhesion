@@ -3,4 +3,4 @@
 
 [[sweep]]
 path = "physics.capillary.liquid_volume_percent"
-linspace = [20.0, 80.0, 7]
+linspace = [25.0, 50.0, 12]

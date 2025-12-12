@@ -2,9 +2,9 @@
 # Base setup: setups/tip-pattern-hydrophilic.toml
 
 [[sweep]]
-path = "geometry.lower.tip_center_x"
+path = "physics.lower.tip_center_x"
 linspace = [0.0, 0.128, 4]
 
 [[sweep]]
-path = "geometry.lower.tip_center_y"
+path = "physics.lower.tip_center_y"
 linspace = [0.0, 0.128, 4]
