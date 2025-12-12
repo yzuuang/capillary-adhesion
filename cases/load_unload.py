@@ -57,7 +57,7 @@ def main():
     case_name = os.path.splitext(os.path.basename(__file__))[0]
     upper_shape = get_surface_shape(config.geometry.upper)
     lower_shape = get_surface_shape(config.geometry.lower)
-    shape_name = f'{upper_shape}-over-{lower_shape}'
+    shape_name = f'{upper_shape}-on-{lower_shape}'
     base_dir = os.path.join(case_name, shape_name)
     run = register_run(base_dir, __file__, config_file)
 

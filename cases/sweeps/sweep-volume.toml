@@ -1,0 +1,6 @@
+# Parameter sweep: varying liquid volume percentage
+# Base setup: setups/tip-flat-hydrophilic.toml
+
+[[sweep]]
+path = "physics.capillary.liquid_volume_percent"
+linspace = [20.0, 80.0, 7]
