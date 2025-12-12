@@ -7,50 +7,8 @@ Provides:
 - Parameter sweep expansion for parametric exploration
 """
 
-from .schema import (
-    Config,
-    GeometryConfig,
-    GridConfig,
-    SurfaceConfig,
-    FlatSurface,
-    TipSurface,
-    SinusoidSurface,
-    RoughSurface,
-    PatternSurface,
-    PhysicsConfig,
-    CapillaryConfig,
-    SimulationConfig,
-    TrajectoryConfig,
-    SolverConfig,
-    SweepConfig,
-)
+from .schema import Config
 
 from .loader import load_config, save_config, get_surface_shape
 
 from .sweep import expand_sweeps, count_sweep_combinations
-
-__all__ = [
-    # Schema classes
-    "Config",
-    "GeometryConfig",
-    "GridConfig",
-    "SurfaceConfig",
-    "FlatSurface",
-    "TipSurface",
-    "SinusoidSurface",
-    "RoughSurface",
-    "PatternSurface",
-    "PhysicsConfig",
-    "CapillaryConfig",
-    "SimulationConfig",
-    "TrajectoryConfig",
-    "SolverConfig",
-    "SweepConfig",
-    # Loader functions
-    "load_config",
-    "save_config",
-    "get_surface_shape",
-    # Sweep functions
-    "expand_sweeps",
-    "count_sweep_combinations",
-]
