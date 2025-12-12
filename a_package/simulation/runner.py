@@ -65,19 +65,27 @@ def run_simulation(config: Config, output_dir: str | pathlib.Path) -> Simulation
     # Build trajectory
     trajectory = build_trajectory(config)
 
-    # Compute liquid volume
-    volume = compute_liquid_volume(grid, config, upper, lower, capillary_args, trajectory)
-
     # Random initial phase field
     rng = random.default_rng()
     phase_init = rng.random((1, 1, *grid.nb_elements))
 
-    # Run simulation
+    # Create simulation
     logger.info(f"Starting simulation with output to {output_dir}")
     simulation = Simulation(grid, output_dir, capillary_args, solver_args)
-    io = simulation.simulate_approach_retraction_with_constant_volume(
-        upper, lower, volume, trajectory, phase_init=phase_init
-    )
+
+    # Dispatch based on constraint type
+    constraint_cfg = config.simulation["constraint"]
+    constraint_type = constraint_cfg["type"]
+
+    if constraint_type == "constant_volume":
+        volume = compute_liquid_volume(
+            grid, constraint_cfg, upper, lower, capillary_args, trajectory
+        )
+        io = simulation.run_with_constant_volume(
+            upper, lower, trajectory, volume, phase_init=phase_init
+        )
+    else:
+        raise ValueError(f"Unknown constraint type: {constraint_type}")
 
     return io
 
@@ -137,18 +145,34 @@ def build_solver_args(config: Config) -> dict[str, Any]:
 
 def build_trajectory(config: Config) -> np.ndarray:
     """Build separation trajectory from configuration."""
-    traj = config.simulation["trajectory"]
-    d_min = traj["min_separation"]
-    d_max = traj["max_separation"]
-    d_step = traj["step_size"]
-    nb_steps = round((d_max - d_min) / d_step) + 1
-    # Start from max (approach), go to min
-    return np.linspace(d_max, d_min, nb_steps)
+    traj_cfg = config.simulation["trajectory"]
+    traj_type = traj_cfg["type"]
+
+    if traj_type == "approach_retract":
+        d_min = traj_cfg["min_separation"]
+        d_max = traj_cfg["max_separation"]
+        d_step = traj_cfg["step_size"]
+        round_trip = traj_cfg.get("round_trip", True)
+
+        nb_steps = round((d_max - d_min) / d_step) + 1
+        # Start from max (approach), go to min
+        separations = np.linspace(d_max, d_min, nb_steps)
+
+        if round_trip:
+            separations = np.concatenate([separations, np.flip(separations)[1:]])
+
+        return separations
+
+    elif traj_type == "explicit":
+        return np.array(traj_cfg["values"])
+
+    else:
+        raise ValueError(f"Unknown trajectory type: {traj_type}")
 
 
 def compute_liquid_volume(
     grid: Grid,
-    config: Config,
+    constraint_cfg: dict[str, Any],
     upper: np.ndarray,
     lower: np.ndarray,
     capillary_args: dict[str, Any],
@@ -171,5 +195,5 @@ def compute_liquid_volume(
     formulation.set_phase(full_liquid)
 
     # Compute volume as percentage of full
-    V_percent = 0.01 * config.physics["capillary"]["liquid_volume_percent"]
+    V_percent = 0.01 * constraint_cfg["liquid_volume_percent"]
     return formulation.get_volume() * V_percent

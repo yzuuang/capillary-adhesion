@@ -25,7 +25,6 @@ tip_center_y = 0.0
 [physics.capillary]
 interface_thickness = 0.001
 contact_angle_degree = 60.0
-liquid_volume_percent = 50.0
 
 [numerics]
 [numerics.solver]
@@ -37,6 +36,12 @@ init_penalty_weight = 0.1
 
 [simulation]
 [simulation.trajectory]
+type = "approach_retract"
 min_separation = 0.001
 max_separation = 0.030
 step_size = 0.001
+round_trip = true
+
+[simulation.constraint]
+type = "constant_volume"
+liquid_volume_percent = 50.0

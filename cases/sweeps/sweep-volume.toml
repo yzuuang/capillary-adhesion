@@ -2,5 +2,5 @@
 # Base setup: setups/tip-flat-hydrophilic.toml
 
 [[sweep]]
-path = "physics.capillary.liquid_volume_percent"
+path = "simulation.constraint.liquid_volume_percent"
 linspace = [25.0, 50.0, 12]

@@ -24,7 +24,6 @@ hurst_exponent = 0.95
 [physics.capillary]
 interface_thickness = 0.01
 contact_angle_degree = 120.0
-liquid_volume_percent = 100.0
 
 [numerics]
 [numerics.solver]
@@ -36,6 +35,12 @@ init_penalty_weight = 0.1
 
 [simulation]
 [simulation.trajectory]
+type = "approach_retract"
 min_separation = 0.0000
 max_separation = 0.0010
 step_size = 0.00001
+round_trip = true
+
+[simulation.constraint]
+type = "constant_volume"
+liquid_volume_percent = 100.0

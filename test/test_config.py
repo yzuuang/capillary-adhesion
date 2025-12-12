@@ -40,7 +40,6 @@ constant = 0.0
 [physics.capillary]
 interface_thickness = 0.05
 contact_angle_degree = 45.0
-liquid_volume_percent = 15.0
 
 [numerics]
 [numerics.solver]
@@ -52,9 +51,15 @@ init_penalty_weight = 0.1
 
 [simulation]
 [simulation.trajectory]
+type = "approach_retract"
 min_separation = 0.0
 max_separation = 0.1
 step_size = 0.01
+round_trip = true
+
+[simulation.constraint]
+type = "constant_volume"
+liquid_volume_percent = 15.0
 """
 
 
@@ -78,7 +83,6 @@ constant = 0.0
 [physics.capillary]
 interface_thickness = 0.05
 contact_angle_degree = 45.0
-liquid_volume_percent = 15.0
 
 [numerics]
 [numerics.solver]
@@ -90,12 +94,18 @@ init_penalty_weight = 0.1
 
 [simulation]
 [simulation.trajectory]
+type = "approach_retract"
 min_separation = 0.0
 max_separation = 0.1
 step_size = 0.01
+round_trip = true
+
+[simulation.constraint]
+type = "constant_volume"
+liquid_volume_percent = 15.0
 
 [[sweep]]
-path = "physics.capillary.liquid_volume_percent"
+path = "simulation.constraint.liquid_volume_percent"
 linspace = [20.0, 80.0, 4]
 """
 
@@ -126,11 +136,15 @@ def test_load_config(temp_toml_file):
     # Physics capillary is a raw dict
     assert config.physics["capillary"]["contact_angle_degree"] == 45.0
     assert config.physics["capillary"]["interface_thickness"] == 0.05
-    assert config.physics["capillary"]["liquid_volume_percent"] == 15.0
     # Numerics solver
     assert config.numerics["solver"]["max_nb_iters"] == 1000
     # Simulation trajectory
+    assert config.simulation["trajectory"]["type"] == "approach_retract"
     assert config.simulation["trajectory"]["step_size"] == 0.01
+    assert config.simulation["trajectory"]["round_trip"] == True
+    # Simulation constraint
+    assert config.simulation["constraint"]["type"] == "constant_volume"
+    assert config.simulation["constraint"]["liquid_volume_percent"] == 15.0
 
 
 def test_save_and_reload_config(temp_toml_file):
@@ -146,7 +160,7 @@ def test_save_and_reload_config(temp_toml_file):
 
         assert reloaded.domain["grid"]["pixel_size"] == config.domain["grid"]["pixel_size"]
         assert get_surface_shape(reloaded, "upper") == get_surface_shape(config, "upper")
-        assert reloaded.physics["capillary"]["liquid_volume_percent"] == config.physics["capillary"]["liquid_volume_percent"]
+        assert reloaded.simulation["constraint"]["liquid_volume_percent"] == config.simulation["constraint"]["liquid_volume_percent"]
     finally:
         os.unlink(output_path)
 
@@ -157,7 +171,7 @@ def test_expand_sweeps_no_sweep(temp_toml_file):
 
     expanded = list(expand_sweeps(config))
     assert len(expanded) == 1
-    assert expanded[0].physics["capillary"]["liquid_volume_percent"] == 15.0
+    assert expanded[0].simulation["constraint"]["liquid_volume_percent"] == 15.0
 
 
 def test_expand_sweeps_with_linspace(sample_toml_with_sweep):
@@ -176,7 +190,7 @@ def test_expand_sweeps_with_linspace(sample_toml_with_sweep):
         assert len(expanded) == 4
 
         # Check the swept values
-        volumes = [c.physics["capillary"]["liquid_volume_percent"] for c in expanded]
+        volumes = [c.simulation["constraint"]["liquid_volume_percent"] for c in expanded]
         np.testing.assert_array_almost_equal(volumes, [20.0, 40.0, 60.0, 80.0])
 
         # Verify sweeps are removed from expanded configs
@@ -199,7 +213,6 @@ def test_expand_sweeps_with_multiple_sweeps():
             "capillary": {
                 "interface_thickness": 0.05,
                 "contact_angle_degree": 45.0,
-                "liquid_volume_percent": 15.0,
             },
         },
         numerics={
@@ -212,10 +225,20 @@ def test_expand_sweeps_with_multiple_sweeps():
             }
         },
         simulation={
-            "trajectory": {"min_separation": 0.0, "max_separation": 0.1, "step_size": 0.01}
+            "trajectory": {
+                "type": "approach_retract",
+                "min_separation": 0.0,
+                "max_separation": 0.1,
+                "step_size": 0.01,
+                "round_trip": True,
+            },
+            "constraint": {
+                "type": "constant_volume",
+                "liquid_volume_percent": 15.0,
+            },
         },
         sweeps=[
-            {"path": "physics.capillary.liquid_volume_percent", "linspace": [20.0, 40.0, 3]},
+            {"path": "simulation.constraint.liquid_volume_percent", "linspace": [20.0, 40.0, 3]},
             {"path": "physics.capillary.contact_angle_degree", "values": [30.0, 60.0]},
         ],
     )
