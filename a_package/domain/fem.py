@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.sparse as sparse
 
-from a_package.domain import Grid
+from .grid import Grid
 
 
 class FirstOrderElement:

@@ -15,9 +15,7 @@ import logging
 
 import numpy as np
 
-from a_package.domain import Grid, Field, adapt_shape, field_component_ax
-from a_package.numerics.fem import FirstOrderElement
-from a_package.numerics.quadrature import Quadrature, centroid_quadrature
+from a_package.domain import Grid, Field, adapt_shape, field_component_ax, FirstOrderElement, Quadrature, centroid_quadrature
 
 
 logger = logging.getLogger(__name__)

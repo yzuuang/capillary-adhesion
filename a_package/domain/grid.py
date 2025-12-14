@@ -1,12 +1,10 @@
 import typing
 import functools
 import operator
+import dataclasses as dc
 
 import numpy as np
 import numpy.fft as fft
-
-
-import dataclasses as dc
 
 
 @dc.dataclass

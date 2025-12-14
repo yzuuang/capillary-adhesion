@@ -32,8 +32,8 @@ def load_config(path: str | Path) -> Config:
 
     return Config(
         domain=data["domain"],
-        physics=data["physics"],
-        numerics=data["numerics"],
+        problem=data["problem"],
+        solver=data["solver"],
         simulation=data["simulation"],
         sweeps=sweeps,
     )
@@ -46,10 +46,10 @@ def save_config(config: Config, path: str | Path) -> None:
 
     if config.domain:
         data["domain"] = config.domain
-    if config.physics:
-        data["physics"] = config.physics
-    if config.numerics:
-        data["numerics"] = config.numerics
+    if config.problem:
+        data["problem"] = config.problem
+    if config.solver:
+        data["solver"] = config.solver
     if config.simulation:
         data["simulation"] = config.simulation
     if config.sweeps:
@@ -75,4 +75,4 @@ def get_surface_shape(config: Config, which: str) -> str:
     str
         The surface shape name.
     """
-    return config.physics[which]["shape"]
+    return config.problem[which]["shape"]

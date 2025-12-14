@@ -10,8 +10,8 @@ import types
 import numpy as np
 
 from a_package.domain import Grid
-from a_package.numerics.optimizer import AugmentedLagrangian
-from a_package.physics.capillary import NodalFormCapillary
+from a_package.solver.optimizer import AugmentedLagrangian
+from a_package.problem.capillary import NodalFormCapillary
 
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class PhaseSolver:
     """
-    Solves for the equilibrium phase field under various constraints.
+    Solves for the equilibrium phase field under                                                                                             various constraints.
 
     Owns the formulation and optimizer, provides methods for different
     constraint types.

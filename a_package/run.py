@@ -11,14 +11,11 @@ from typing import Any
 import numpy as np
 import numpy.random as random
 
-from a_package.domain import Grid
 from a_package.config import Config, save_config, expand_sweeps, count_sweep_combinations
-from a_package.physics.surfaces import generate_surface
-from a_package.physics.capillary import NodalFormCapillary
-from a_package.simulation.simulation import Simulation
-from a_package.simulation.io import SimulationIO
-from a_package.runtime.dirs import RunDir, register_run
-from a_package.runtime.logging import switch_log_file
+from a_package.domain import Grid
+from a_package.problem import generate_surface, NodalFormCapillary
+from a_package.simulation import Simulation, SimulationIO
+from a_package.runtime import RunDir, register_run, switch_log_file
 
 
 logger = logging.getLogger(__name__)
@@ -56,7 +53,7 @@ def build_capillary_args(config: Config) -> dict[str, Any]:
     - contact_angle_degree -> theta (radians)
     - interface_thickness -> eta
     """
-    capillary = config.physics["capillary"]
+    capillary = config.problem["capillary"]
     theta = (np.pi / 180) * capillary["contact_angle_degree"]
     eta = capillary["interface_thickness"]
     return {"eta": eta, "theta": theta}
@@ -71,13 +68,13 @@ def build_solver_args(config: Config) -> dict[str, Any]:
     - max_nb_loops -> max_outer_loop
     - tol_constraints -> tol_constraint
     """
-    solver = config.numerics["solver"]
+    optimizer = config.solver["optimizer"]
     return {
-        "max_inner_iter": solver["max_nb_iters"],
-        "max_outer_loop": solver["max_nb_loops"],
-        "tol_convergence": solver["tol_convergence"],
-        "tol_constraint": solver["tol_constraints"],
-        "init_penalty_weight": solver["init_penalty_weight"],
+        "max_inner_iter": optimizer["max_nb_iters"],
+        "max_outer_loop": optimizer["max_nb_loops"],
+        "tol_convergence": optimizer["tol_convergence"],
+        "tol_constraint": optimizer["tol_constraints"],
+        "init_penalty_weight": optimizer["init_penalty_weight"],
     }
 
 
@@ -162,8 +159,8 @@ def run_simulation(config: Config, run_dir: RunDir) -> SimulationIO:
     """
     # Build primitives from config
     grid = create_grid_from_config(config)
-    upper = generate_surface_from_config(grid, config.physics["upper"])
-    lower = generate_surface_from_config(grid, config.physics["lower"])
+    upper = generate_surface_from_config(grid, config.problem["upper"])
+    lower = generate_surface_from_config(grid, config.problem["lower"])
     capillary_args = build_capillary_args(config)
     solver_args = build_solver_args(config)
     trajectory = build_trajectory(config)

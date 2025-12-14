@@ -8,30 +8,13 @@ The first config file provides base parameters. Additional config files
 can override specific values (useful for sweep specifications).
 """
 
+import logging
 import os
 import sys
-import logging
 
-import matplotlib.pyplot as plt
-import matplotlib.animation as ani
-import numpy as np
-import numpy.random as random
-
-from a_package.config import load_config, save_config, expand_sweeps, count_sweep_combinations, get_surface_shape, Config
-from a_package.domain import Grid
-from a_package.physics.surfaces import generate_surface
-from a_package.simulation.formulation import NodalFormCapillary
-from a_package.simulation.simulation import Simulation
-from a_package.simulation.runner import (
-    create_grid_from_config,
-    generate_surface_from_config,
-    build_capillary_args,
-    build_solver_args,
-    build_trajectory,
-    compute_liquid_volume,
-)
-from a_package.runtime.dirs import RunDir, register_run
-from a_package.runtime.logging import reset_logging, switch_log_file
+from a_package.config import Config, get_surface_shape, load_config
+from a_package.runtime import register_run, reset_logging
+from a_package.run import run_sweep, build_trajectory, create_grid_from_config, generate_surface_from_config
 
 from cases.visualise_onerun import create_overview_animation
 
@@ -62,31 +45,28 @@ def main():
     base_dir = os.path.join(case_name, shape_name)
     run = register_run(base_dir, __file__, config_file)
 
-    # check if parameter sweep is specified in config
-    nb_configs = count_sweep_combinations(config)
-    if nb_configs == 1:
-        # No sweeps, single run
-        switch_log_file(run.log_file)
-        io = run_one_trip(run, config)
-        create_overview_animation(run.path, io.grid)
-    else:
-        # Parameter sweep
-        for index, expanded_config in enumerate(expand_sweeps(config)):
-            sub_run = register_run(run.intermediate_dir, __file__, with_hash=False)
-            switch_log_file(sub_run.log_file)
-            logger.info(f"Run #{index + 1} of {nb_configs} runs.")
-            # Save the expanded config for reproducibility
-            save_config(expanded_config, sub_run.parameters_dir / f"subrun-{index}.toml")
-            io = run_one_trip(sub_run, expanded_config)
-            create_overview_animation(sub_run.path, io.grid)
+    # Run simulation(s) - handles sweeps automatically
+    ios = run_sweep(config, run)
+
+    # Create visualisations
+    for io in ios:
+        create_overview_animation(io, io.grid)
 
 
 def preview_surface_and_gap(config: Config):
     """A visual check before running simulations."""
+    import matplotlib.animation as ani
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from a_package.simulation.visualisation import latexify_plot
+
     grid = create_grid_from_config(config)
-    h1 = generate_surface_from_config(grid, config.domain["upper"])
-    h0 = generate_surface_from_config(grid, config.domain["lower"])
+    h1 = generate_surface_from_config(grid, config.physics["upper"])
+    h0 = generate_surface_from_config(grid, config.physics["lower"])
     trajectory = build_trajectory(config)
+
+    latexify_plot(12)
 
     # create the figure and axes
     fig = plt.figure(figsize=(12, 5), constrained_layout=True)
@@ -130,34 +110,6 @@ def preview_surface_and_gap(config: Config):
     skip = input("Run simulation [Y/n]? ").strip().lower() in ("n", "no")
     if skip:
         sys.exit(0)
-
-
-def run_one_trip(run: RunDir, config: Config):
-    """Run a single simulation with given configuration."""
-    # Grid
-    grid = create_grid_from_config(config)
-
-    # Surfaces (bridge config -> physics primitives)
-    upper = generate_surface_from_config(grid, config.domain["upper"])
-    lower = generate_surface_from_config(grid, config.domain["lower"])
-
-    # Trajectory
-    trajectory = build_trajectory(config)
-
-    # Capillary model args
-    capi_args = build_capillary_args(config)
-
-    # Solver args
-    solver_args = build_solver_args(config)
-
-    # Liquid volume from percentage specification
-    volume = compute_liquid_volume(grid, config, upper, lower, capi_args, trajectory)
-
-    # Run simulation
-    phi_init = random.rand(1, 1, *grid.nb_elements)
-    simulation = Simulation(grid, run.results_dir, capi_args, solver_args)
-    return simulation.simulate_approach_retraction_with_constant_volume(
-        upper, lower, volume, trajectory, phase_init=phi_init)
 
 
 if __name__ == "__main__":

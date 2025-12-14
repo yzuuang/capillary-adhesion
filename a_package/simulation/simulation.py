@@ -11,8 +11,9 @@ import pathlib
 import numpy as np
 
 from a_package.domain import Grid
-from a_package.solvers import RigidContactSolver, PhaseSolver
-from a_package.simulation.io import SimulationIO, Term
+from a_package.solver import RigidContactSolver, PhaseSolver
+
+from .io import SimulationIO, Term
 
 
 logger = logging.getLogger(__name__)

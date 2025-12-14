@@ -6,27 +6,27 @@
 pixel_size = 0.01
 nb_pixels = 256
 
-[physics]
-[physics.upper]
+[problem]
+[problem.upper]
 shape = "rough"
 prefactor = 1e5
 rolloff_wavelength_pixels = 64
 cutoff_wavelength_pixels = 8
 hurst_exponent = 0.95
 
-[physics.lower]
+[problem.lower]
 shape = "rough"
 prefactor = 1e5
 rolloff_wavelength_pixels = 64
 cutoff_wavelength_pixels = 8
 hurst_exponent = 0.95
 
-[physics.capillary]
+[problem.capillary]
 interface_thickness = 0.01
 contact_angle_degree = 60.0
 
-[numerics]
-[numerics.solver]
+[solver]
+[solver.optimizer]
 max_nb_iters = 1000
 max_nb_loops = 50
 tol_convergence = 1e-6

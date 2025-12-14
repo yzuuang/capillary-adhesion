@@ -16,7 +16,7 @@ from a_package.config import (
     get_surface_shape,
     Config,
 )
-from a_package.physics.surfaces import generate_surface
+from a_package.problem.surfaces import generate_surface
 from a_package.domain import Grid
 
 
@@ -28,21 +28,21 @@ def sample_toml_content():
 pixel_size = 0.05
 nb_pixels = 64
 
-[physics]
-[physics.upper]
+[problem]
+[problem.upper]
 shape = "tip"
 radius = 10.0
 
-[physics.lower]
+[problem.lower]
 shape = "flat"
 constant = 0.0
 
-[physics.capillary]
+[problem.capillary]
 interface_thickness = 0.05
 contact_angle_degree = 45.0
 
-[numerics]
-[numerics.solver]
+[solver]
+[solver.optimizer]
 max_nb_iters = 1000
 max_nb_loops = 30
 tol_convergence = 1e-6
@@ -71,21 +71,21 @@ def sample_toml_with_sweep():
 pixel_size = 0.05
 nb_pixels = 64
 
-[physics]
-[physics.upper]
+[problem]
+[problem.upper]
 shape = "tip"
 radius = 10.0
 
-[physics.lower]
+[problem.lower]
 shape = "flat"
 constant = 0.0
 
-[physics.capillary]
+[problem.capillary]
 interface_thickness = 0.05
 contact_angle_degree = 45.0
 
-[numerics]
-[numerics.solver]
+[solver]
+[solver.optimizer]
 max_nb_iters = 1000
 max_nb_loops = 30
 tol_convergence = 1e-6
@@ -127,17 +127,17 @@ def test_load_config(temp_toml_file):
     # Domain - only grid
     assert config.domain["grid"]["pixel_size"] == 0.05
     assert config.domain["grid"]["nb_pixels"] == 64
-    # Physics - surfaces and capillary
-    assert config.physics["upper"]["shape"] == "tip"
-    assert config.physics["upper"]["radius"] == 10.0
-    assert config.physics["lower"]["shape"] == "flat"
+    # Problem - surfaces and capillary
+    assert config.problem["upper"]["shape"] == "tip"
+    assert config.problem["upper"]["radius"] == 10.0
+    assert config.problem["lower"]["shape"] == "flat"
     assert get_surface_shape(config, "upper") == "tip"
     assert get_surface_shape(config, "lower") == "flat"
-    # Physics capillary is a raw dict
-    assert config.physics["capillary"]["contact_angle_degree"] == 45.0
-    assert config.physics["capillary"]["interface_thickness"] == 0.05
-    # Numerics solver
-    assert config.numerics["solver"]["max_nb_iters"] == 1000
+    # Problem capillary is a raw dict
+    assert config.problem["capillary"]["contact_angle_degree"] == 45.0
+    assert config.problem["capillary"]["interface_thickness"] == 0.05
+    # Solver optimizer
+    assert config.solver["optimizer"]["max_nb_iters"] == 1000
     # Simulation trajectory
     assert config.simulation["trajectory"]["type"] == "approach_retract"
     assert config.simulation["trajectory"]["step_size"] == 0.01
@@ -207,7 +207,7 @@ def test_expand_sweeps_with_multiple_sweeps():
         domain={
             "grid": {"pixel_size": 0.05, "nb_pixels": 64},
         },
-        physics={
+        problem={
             "upper": {"shape": "tip", "radius": 10.0},
             "lower": {"shape": "flat", "constant": 0.0},
             "capillary": {
@@ -215,8 +215,8 @@ def test_expand_sweeps_with_multiple_sweeps():
                 "contact_angle_degree": 45.0,
             },
         },
-        numerics={
-            "solver": {
+        solver={
+            "optimizer": {
                 "max_nb_iters": 1000,
                 "max_nb_loops": 30,
                 "tol_convergence": 1e-6,
@@ -239,7 +239,7 @@ def test_expand_sweeps_with_multiple_sweeps():
         },
         sweeps=[
             {"path": "simulation.constraint.liquid_volume_percent", "linspace": [20.0, 40.0, 3]},
-            {"path": "physics.capillary.contact_angle_degree", "values": [30.0, 60.0]},
+            {"path": "problem.capillary.contact_angle_degree", "values": [30.0, 60.0]},
         ],
     )
 

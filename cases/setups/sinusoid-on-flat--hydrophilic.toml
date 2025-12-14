@@ -6,24 +6,24 @@
 pixel_size = 0.05
 nb_pixels = 256
 
-[physics]
-[physics.upper]
+[problem]
+[problem.upper]
 shape = "sinusoid"
 wavenumber = 4.0
 amplitude = 0.2
 
-[physics.lower]
+[problem.lower]
 shape = "flat"
 constant = 0.0
 
-[physics.capillary]
+[problem.capillary]
 # It seems when this value is smaller than pixel_size,
 # it can converge to less optimal or even weird patterns
 interface_thickness = 0.05
 contact_angle_degree = 45.0
 
-[numerics]
-[numerics.solver]
+[solver]
+[solver.optimizer]
 max_nb_iters = 1000
 max_nb_loops = 50
 tol_convergence = 1e-8

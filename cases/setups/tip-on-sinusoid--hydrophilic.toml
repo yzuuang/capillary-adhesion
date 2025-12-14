@@ -6,24 +6,24 @@
 pixel_size = 0.05
 nb_pixels = 256
 
-[physics]
-[physics.upper]
+[problem]
+[problem.upper]
 shape = "tip"
 # For big tip, radius should be larger than 1.415 of domain size
 # to eliminate corner effects
 radius = 10.0
 
-[physics.lower]
+[problem.lower]
 shape = "sinusoid"
 wavenumber = 10.0
 amplitude = 0.2
 
-[physics.capillary]
+[problem.capillary]
 interface_thickness = 0.05
 contact_angle_degree = 45.0
 
-[numerics]
-[numerics.solver]
+[solver]
+[solver.optimizer]
 max_nb_iters = 1000
 max_nb_loops = 30
 tol_convergence = 1e-6
