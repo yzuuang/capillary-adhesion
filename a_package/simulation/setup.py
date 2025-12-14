@@ -12,7 +12,7 @@ import numpy as np
 from a_package.domain import Grid
 from a_package.config import Config
 from a_package.physics.surfaces import generate_surface
-from a_package.simulation.formulation import NodalFormCapillary
+from a_package.physics.capillary import NodalFormCapillary
 
 
 def create_grid_from_config(config: Config) -> Grid:

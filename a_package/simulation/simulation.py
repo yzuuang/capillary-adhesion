@@ -13,7 +13,7 @@ import numpy as np
 
 from a_package.domain import Grid, adapt_shape
 from a_package.numerics.optimizer import AugmentedLagrangian
-from a_package.simulation.formulation import NodalFormCapillary
+from a_package.physics.capillary import NodalFormCapillary
 from a_package.simulation.io import SimulationIO, Term
 
 
