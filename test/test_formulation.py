@@ -8,12 +8,11 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-from a_package.field import adapt_shape
-from a_package.workflow.formulation import NodalFormCapillary
-from a_package.grid import Grid
+from a_package.domain import Grid, adapt_shape
+from a_package.problem.capillary import NodalFormCapillary
 
 
-show_me_plot = True
+show_me_plot = False
 
 
 def test_energy_jacobian_in_formulation():

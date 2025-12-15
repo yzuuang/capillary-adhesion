@@ -1,26 +1,21 @@
+"""
+Load-unload simulation case.
+
+Usage:
+    python -m cases.load_unload config.toml [config2.toml ...]
+
+The first config file provides base parameters. Additional config files
+can override specific values (useful for sweep specifications).
+"""
+
+import logging
 import os
 import sys
-import logging
 
-import matplotlib.pyplot as plt
-import matplotlib.animation as ani
-import numpy as np
-import numpy.random as random
+from a_package.config import Config, get_surface_shape, load_config
+from a_package.runtime import register_run, reset_logging
+from a_package.run import run_sweep, build_trajectory, create_grid_from_config, generate_surface_from_config
 
-from a_package.workflow.formulation import NodalFormCapillary
-from a_package.workflow.simulation import Simulation
-from a_package.utils.runtime import RunDir, register_run
-from a_package.utils.logging import reset_logging, switch_log_file
-
-from cases.configs import (
-    read_config_files,
-    save_config_to_file,
-    extract_sweeps,
-    create_grid,
-    match_shape_and_get_height,
-    get_capillary_args,
-    get_optimizer_args,
-)
 from cases.visualise_onerun import create_overview_animation
 
 
@@ -30,57 +25,52 @@ logger = logging.getLogger(__name__)
 
 def main():
     reset_logging()
-    config_files = sys.argv[1:]
-    config = read_config_files(config_files)
+
+    if len(sys.argv) < 2:
+        print("Usage: python -m cases.load_unload config.toml")
+        sys.exit(1)
+
+    config_file = sys.argv[1]
+    config = load_config(config_file)
 
     # visual check
     if show_me_preview:
-        preview_surface_and_gap(config["Grid"], config["UpperSurface"], config["LowerSurface"], config["Trajectory"])
+        preview_surface_and_gap(config)
 
     # setup run directory
     case_name = os.path.splitext(os.path.basename(__file__))[0]
-    shape_name = f'{config["UpperSurface"]["shape"]}-over-{config["LowerSurface"]["shape"]}'
+    upper_shape = get_surface_shape(config, "upper")
+    lower_shape = get_surface_shape(config, "lower")
+    shape_name = f'{upper_shape}-on-{lower_shape}'
     base_dir = os.path.join(case_name, shape_name)
-    run = register_run(base_dir, __file__, *config_files)
+    run = register_run(base_dir, __file__, config_file)
 
-    # check if parameter sweep is specified in config
-    sweep_section_prefix = "ParameterSweep"
-    sweeps = extract_sweeps(config, sweep_section_prefix)
-    if sweeps is None:
-        switch_log_file(run.log_file)
-        io = run_one_trip(run, config)
-        create_overview_animation(run.path, io.grid)
-    else:
-        nb_subruns = len(sweeps)
-        for index, config in enumerate(sweeps.iter_config(config)):
-            sub_run = register_run(run.intermediate_dir, __file__, with_hash=False)
-            switch_log_file(sub_run.log_file)
-            logger.info(f"Run #{index} of {nb_subruns} runs.")
-            save_config_to_file(config, sub_run.parameters_dir / f"subrun-{index}.ini")
-            io = run_one_trip(sub_run, config)
-            create_overview_animation(sub_run.path, io.grid)
+    # Run simulation(s) - handles sweeps automatically
+    ios = run_sweep(config, run)
+
+    # Create visualisations
+    for io in ios:
+        create_overview_animation(io, io.grid)
 
 
-def preview_surface_and_gap(
-    grid_params: dict[str, str],
-    upper_surface_params: dict[str, str],
-    lower_surface_params: dict[str, str],
-    trajectory_params: dict[str, str],
-):
+def preview_surface_and_gap(config: Config):
     """A visual check before running simulations."""
-    # get values from params
-    grid = create_grid(grid_params)
-    h1 = match_shape_and_get_height(grid, upper_surface_params)
-    h0 = match_shape_and_get_height(grid, lower_surface_params)
-    d_min = float(trajectory_params["min_separation"])
-    d_max = float(trajectory_params["max_separation"])
-    d_step = float(trajectory_params["step_size"])
-    nb_steps = round((d_max - d_min) / d_step) + 1
-    trajectory = np.linspace(d_max, d_min, nb_steps)
+    import matplotlib.animation as ani
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from a_package.simulation.visualisation import latexify_plot
+
+    grid = create_grid_from_config(config)
+    h1 = generate_surface_from_config(grid, config.physics["upper"])
+    h0 = generate_surface_from_config(grid, config.physics["lower"])
+    trajectory = build_trajectory(config)
+
+    latexify_plot(12)
 
     # create the figure and axes
     fig = plt.figure(figsize=(12, 5), constrained_layout=True)
-    ax1 = fig.add_subplot(1, 2, 1, projection="3d")  # subplotkw={'projection': '3d'})
+    ax1 = fig.add_subplot(1, 2, 1, projection="3d")
     ax2 = fig.add_subplot(1, 2, 2)
 
     def update_frame(i_frame: int):
@@ -112,6 +102,7 @@ def preview_surface_and_gap(
         return *ax1.images, *ax2.images
 
     # draw the animation
+    nb_steps = len(trajectory)
     _ = ani.FuncAnimation(fig, update_frame, nb_steps, interval=200, repeat_delay=3000)
 
     # allow to exit if it does not look right
@@ -119,45 +110,6 @@ def preview_surface_and_gap(
     skip = input("Run simulation [Y/n]? ").strip().lower() in ("n", "no")
     if skip:
         sys.exit(0)
-
-
-def run_one_trip(run:RunDir, config: dict[str, dict[str, str]]):
-
-    # grid
-    grid = create_grid(config["Grid"])
-
-    # surfaces
-    upper = match_shape_and_get_height(grid, config["UpperSurface"])
-    lower = match_shape_and_get_height(grid, config["LowerSurface"])
-
-    # trajectory
-    d_min = float(config["Trajectory"]["min_separation"])
-    d_max = float(config["Trajectory"]["max_separation"])
-    d_step = float(config["Trajectory"]["step_size"])
-    nb_steps = round((d_max - d_min) / d_step) + 1
-    trajectory = np.linspace(d_max, d_min, nb_steps)
-
-    # capillary model
-    capi_args = get_capillary_args(config["Capillary"])
-
-    # solver
-    solver_args = get_optimizer_args(config["Solver"])
-
-    # liquid volume from a percentage specification
-    formulation = NodalFormCapillary(grid, capi_args)
-    z1 = np.amin(trajectory)
-    gap = np.clip(upper + z1 - lower, 0, None)
-    formulation.set_gap(gap)
-    full_liquid = np.ones([1, 1, *grid.nb_elements])
-    formulation.set_phase(full_liquid)
-    V_percent = 0.01 * float(config["Capillary"]["liquid_volume_percent"])
-    V = formulation.get_volume() * V_percent
-
-    # run simulation
-    phi_init = random.rand(1, 1, *grid.nb_elements)
-    simulation = Simulation(grid, run.results_dir, capi_args, solver_args)
-    return simulation.simulate_approach_retraction_with_constant_volume(
-        upper, lower, V, trajectory, phase_init=phi_init)
 
 
 if __name__ == "__main__":
